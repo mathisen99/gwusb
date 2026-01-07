@@ -33,8 +33,8 @@
 - **Relates to:** AC-3
 
 ## Task 6: Busy Check
-- [ ] Implement `CheckNotBusy(path)` — parse `mount` output or `/proc/mounts`
-- [ ] Unmount if mounted, or error if cannot unmount
+- [x] Implement `CheckNotBusy(path)` — parse `mount` output or `/proc/mounts`
+- [x] Unmount if mounted, or error if cannot unmount
 - **Relates to:** AC-3
 
 ## Task 7: Mount/Unmount Operations
