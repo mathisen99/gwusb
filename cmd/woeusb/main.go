@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/mathisen/woeusb-go/internal/deps"
+	"github.com/mathisen/woeusb-go/internal/mount"
 	"github.com/mathisen/woeusb-go/internal/validation"
 )
 
@@ -51,5 +52,24 @@ func main() {
 		if info != nil {
 			fmt.Printf("Device info for %s: is_device=%v\n", path, info["is_device"])
 		}
+	}
+
+	// Test mount functionality
+	fmt.Println("\nTesting mount functions:")
+
+	// Check if root is mounted
+	mounted, mountpoints, err := mount.IsMounted("/")
+	if err != nil {
+		fmt.Printf("Mount check failed: %v\n", err)
+	} else if mounted {
+		fmt.Printf("✓ Root filesystem is mounted at: %v\n", mountpoints)
+	}
+
+	// Test busy check on non-existent device
+	err = mount.CheckNotBusy("/dev/nonexistent")
+	if err != nil {
+		fmt.Printf("Busy check failed: %v\n", err)
+	} else {
+		fmt.Println("✓ Non-existent device is not busy")
 	}
 }
