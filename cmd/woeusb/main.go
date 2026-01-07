@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/mathisen/woeusb-go/internal/deps"
+	"github.com/mathisen/woeusb-go/internal/validation"
 )
 
 func main() {
@@ -31,4 +32,24 @@ func main() {
 	fmt.Printf("  mkfat: %s\n", dependencies.MkFat)
 	fmt.Printf("  mkntfs: %s\n", dependencies.MkNTFS)
 	fmt.Printf("  grub: %s\n", dependencies.GrubCmd)
+
+	// Test validation functions
+	fmt.Println("\nTesting validation functions:")
+
+	// Test source validation with current file
+	err = validation.ValidateSource("go.mod")
+	if err != nil {
+		fmt.Printf("Source validation failed: %v\n", err)
+	} else {
+		fmt.Println("✓ Source validation passed for go.mod")
+	}
+
+	// Test device naming patterns
+	testPaths := []string{"/dev/sda", "/dev/sda1", "/dev/nvme0n1", "/dev/nvme0n1p1"}
+	for _, path := range testPaths {
+		info, _ := validation.GetDeviceInfo(path)
+		if info != nil {
+			fmt.Printf("Device info for %s: is_device=%v\n", path, info["is_device"])
+		}
+	}
 }
