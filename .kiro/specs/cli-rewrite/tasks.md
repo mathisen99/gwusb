@@ -13,9 +13,9 @@
 - **Relates to:** AC-1
 
 ## Task 3: Session and Cleanup
-- [ ] Implement `Session` struct in `internal/session/`
-- [ ] Implement `Cleanup()` method (unmount, remove temp dirs)
-- [ ] Add signal handler for SIGINT/SIGTERM that calls cleanup
+- [x] Implement `Session` struct in `internal/session/`
+- [x] Implement `Cleanup()` method (unmount, remove temp dirs)
+- [x] Add signal handler for SIGINT/SIGTERM that calls cleanup
 - **Relates to:** AC-11
 
 ## Task 4: Dependency Checker

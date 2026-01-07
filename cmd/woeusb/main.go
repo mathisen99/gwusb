@@ -4,9 +4,38 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/mathisen/woeusb-go/internal/session"
 )
 
 const version = "0.1.0"
+
+func main() {
+	cfg := parseArgs()
+	if cfg == nil {
+		return
+	}
+
+	sess := &session.Session{
+		Source:      cfg.source,
+		Target:      cfg.target,
+		Mode:        mode(cfg),
+		Filesystem:  cfg.filesystem,
+		Label:       cfg.label,
+		SkipGRUB:    cfg.skipGrub,
+		SetBootFlag: cfg.biosBootFlag,
+		Verbose:     cfg.verbose,
+		NoColor:     cfg.noColor,
+	}
+
+	sess.SetupSignalHandler()
+	defer func() { _ = sess.Cleanup() }()
+
+	fmt.Printf("Mode: %s\n", sess.Mode)
+	fmt.Printf("Source: %s\n", sess.Source)
+	fmt.Printf("Target: %s\n", sess.Target)
+	fmt.Printf("Filesystem: %s\n", sess.Filesystem)
+}
 
 type config struct {
 	device       bool
@@ -19,18 +48,6 @@ type config struct {
 	noColor      bool
 	source       string
 	target       string
-}
-
-func main() {
-	cfg := parseArgs()
-	if cfg == nil {
-		return
-	}
-
-	fmt.Printf("Mode: %s\n", mode(cfg))
-	fmt.Printf("Source: %s\n", cfg.source)
-	fmt.Printf("Target: %s\n", cfg.target)
-	fmt.Printf("Filesystem: %s\n", cfg.filesystem)
 }
 
 func parseArgs() *config {
