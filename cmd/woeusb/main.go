@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/mathisen/woeusb-go/internal/copy"
 	"github.com/mathisen/woeusb-go/internal/deps"
 	"github.com/mathisen/woeusb-go/internal/filesystem"
 	"github.com/mathisen/woeusb-go/internal/mount"
@@ -149,5 +150,46 @@ func main() {
 	err = filesystem.FormatPartition("/dev/nonexistent", "FAT32", "USB Drive")
 	if err != nil {
 		fmt.Printf("✓ Expected error for partition format: %v\n", err)
+	}
+
+	// Test copy functionality
+	fmt.Println("\nTesting copy functions:")
+
+	// Create temporary directories for copy testing
+	srcDir, err := os.MkdirTemp("", "woeusb-copy-src-")
+	if err != nil {
+		fmt.Printf("Failed to create temp source dir: %v\n", err)
+	} else {
+		defer func() { _ = os.RemoveAll(srcDir) }()
+
+		dstDir, err := os.MkdirTemp("", "woeusb-copy-dst-")
+		if err != nil {
+			fmt.Printf("Failed to create temp destination dir: %v\n", err)
+		} else {
+			defer func() { _ = os.RemoveAll(dstDir) }()
+
+			// Create test files
+			testFile := srcDir + "/test.txt"
+			if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+				fmt.Printf("Failed to create test file: %v\n", err)
+			} else {
+				// Test copy with progress
+				fmt.Printf("Copying from %s to %s\n", srcDir, dstDir)
+				err = copy.CopyDirectoryQuiet(srcDir, dstDir)
+				if err != nil {
+					fmt.Printf("Copy failed: %v\n", err)
+				} else {
+					fmt.Println("✓ Copy completed successfully")
+
+					// Validate copy
+					err = copy.ValidateCopy(srcDir, dstDir)
+					if err != nil {
+						fmt.Printf("Copy validation failed: %v\n", err)
+					} else {
+						fmt.Println("✓ Copy validation passed")
+					}
+				}
+			}
+		}
 	}
 }
