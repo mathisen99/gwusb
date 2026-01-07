@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // MountInfo represents information about a mounted filesystem
@@ -47,6 +48,108 @@ func GetMountInfo() ([]MountInfo, error) {
 	return mounts, nil
 }
 
+// Mount mounts a filesystem using syscall or shell command
+func Mount(source, mountpoint, fstype string, opts []string) error {
+	// Ensure mountpoint exists
+	if err := os.MkdirAll(mountpoint, 0755); err != nil {
+		return fmt.Errorf("failed to create mountpoint %s: %v", mountpoint, err)
+	}
+
+	// Try syscall first for better performance
+	var flags uintptr
+	var data string
+
+	// Parse common mount options
+	for _, opt := range opts {
+		switch opt {
+		case "ro", "readonly":
+			flags |= syscall.MS_RDONLY
+		case "noexec":
+			flags |= syscall.MS_NOEXEC
+		case "nosuid":
+			flags |= syscall.MS_NOSUID
+		case "nodev":
+			flags |= syscall.MS_NODEV
+		default:
+			if data != "" {
+				data += ","
+			}
+			data += opt
+		}
+	}
+
+	// Attempt syscall mount
+	err := syscall.Mount(source, mountpoint, fstype, flags, data)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback to shell command
+	args := []string{"-t", fstype}
+	if len(opts) > 0 {
+		args = append(args, "-o", strings.Join(opts, ","))
+	}
+	args = append(args, source, mountpoint)
+
+	cmd := exec.Command("mount", args...)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to mount %s at %s: %v", source, mountpoint, err)
+	}
+
+	return nil
+}
+
+// Unmount attempts to unmount a filesystem at the given mountpoint
+func Unmount(mountpoint string) error {
+	// Try syscall first
+	err := syscall.Unmount(mountpoint, 0)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback to shell command
+	cmd := exec.Command("umount", mountpoint)
+	if err := cmd.Run(); err != nil {
+		// Try lazy unmount as fallback
+		cmd = exec.Command("umount", "-l", mountpoint)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to unmount %s: %v", mountpoint, err)
+		}
+	}
+	return nil
+}
+
+// CreateTempMountpoint creates a temporary directory for mounting
+func CreateTempMountpoint(prefix string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", prefix)
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp mountpoint: %v", err)
+	}
+	return tmpDir, nil
+}
+
+// CleanupMountpoint unmounts and removes a temporary mountpoint
+func CleanupMountpoint(mountpoint string) error {
+	// Check if it's mounted first
+	mounted, _, err := IsMounted(mountpoint)
+	if err != nil {
+		return fmt.Errorf("failed to check mount status: %v", err)
+	}
+
+	if mounted {
+		if err := Unmount(mountpoint); err != nil {
+			return fmt.Errorf("failed to unmount %s: %v", mountpoint, err)
+		}
+	}
+
+	// Remove the directory
+	if err := os.RemoveAll(mountpoint); err != nil {
+		return fmt.Errorf("failed to remove mountpoint %s: %v", mountpoint, err)
+	}
+
+	return nil
+}
+
 // CheckNotBusy checks if a device is mounted and attempts to unmount it
 func CheckNotBusy(devicePath string) error {
 	mounts, err := GetMountInfo()
@@ -77,19 +180,6 @@ func CheckNotBusy(devicePath string) error {
 	return nil
 }
 
-// Unmount attempts to unmount a filesystem at the given mountpoint
-func Unmount(mountpoint string) error {
-	cmd := exec.Command("umount", mountpoint)
-	if err := cmd.Run(); err != nil {
-		// Try lazy unmount as fallback
-		cmd = exec.Command("umount", "-l", mountpoint)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to unmount %s: %v", mountpoint, err)
-		}
-	}
-	return nil
-}
-
 // IsMounted checks if a specific device or mountpoint is currently mounted
 func IsMounted(path string) (bool, []string, error) {
 	mounts, err := GetMountInfo()
@@ -105,4 +195,39 @@ func IsMounted(path string) (bool, []string, error) {
 	}
 
 	return len(mountpoints) > 0, mountpoints, nil
+}
+
+// MountISO mounts an ISO file to a temporary mountpoint
+func MountISO(isoPath string) (string, error) {
+	mountpoint, err := CreateTempMountpoint("woeusb-iso-")
+	if err != nil {
+		return "", err
+	}
+
+	if err := Mount(isoPath, mountpoint, "iso9660", []string{"ro", "loop"}); err != nil {
+		_ = os.RemoveAll(mountpoint)
+		return "", fmt.Errorf("failed to mount ISO %s: %v", isoPath, err)
+	}
+
+	return mountpoint, nil
+}
+
+// MountDevice mounts a block device to a temporary mountpoint
+func MountDevice(devicePath, fstype string) (string, error) {
+	mountpoint, err := CreateTempMountpoint("woeusb-dev-")
+	if err != nil {
+		return "", err
+	}
+
+	opts := []string{}
+	if fstype == "ntfs" {
+		opts = append(opts, "ro") // Mount NTFS read-only by default
+	}
+
+	if err := Mount(devicePath, mountpoint, fstype, opts); err != nil {
+		_ = os.RemoveAll(mountpoint)
+		return "", fmt.Errorf("failed to mount device %s: %v", devicePath, err)
+	}
+
+	return mountpoint, nil
 }
