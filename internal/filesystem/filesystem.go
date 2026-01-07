@@ -3,13 +3,72 @@ package filesystem
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const (
 	// FAT32MaxFileSize is the maximum file size supported by FAT32 (4GB - 1 byte)
 	FAT32MaxFileSize = 4*1024*1024*1024 - 1 // 4,294,967,295 bytes
 )
+
+// FormatFAT32 formats a partition with FAT32 filesystem
+func FormatFAT32(partition string) error {
+	cmd := exec.Command("mkdosfs", "-F", "32", partition)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to format %s as FAT32: %v", partition, err)
+	}
+	return nil
+}
+
+// FormatNTFS formats a partition with NTFS filesystem and sets a label
+func FormatNTFS(partition, label string) error {
+	args := []string{"--quick"}
+	if label != "" {
+		args = append(args, "--label", label)
+	}
+	args = append(args, partition)
+
+	cmd := exec.Command("mkntfs", args...)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to format %s as NTFS: %v", partition, err)
+	}
+	return nil
+}
+
+// FormatPartition formats a partition with the specified filesystem and label
+func FormatPartition(partition, fstype, label string) error {
+	switch strings.ToUpper(fstype) {
+	case "FAT32", "FAT":
+		if err := FormatFAT32(partition); err != nil {
+			return err
+		}
+		// Set label after formatting if specified
+		if label != "" {
+			return SetFAT32Label(partition, label)
+		}
+		return nil
+	case "NTFS":
+		return FormatNTFS(partition, label)
+	default:
+		return fmt.Errorf("unsupported filesystem type: %s", fstype)
+	}
+}
+
+// SetFAT32Label sets the label on a FAT32 partition
+func SetFAT32Label(partition, label string) error {
+	// Use fatlabel to set the label
+	cmd := exec.Command("fatlabel", partition, label)
+	if err := cmd.Run(); err != nil {
+		// Fallback to dosfslabel if fatlabel is not available
+		cmd = exec.Command("dosfslabel", partition, label)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to set FAT32 label on %s: %v", partition, err)
+		}
+	}
+	return nil
+}
 
 // CheckFAT32Limit walks through all files in the mountpoint and returns true if any file exceeds FAT32 limits
 func CheckFAT32Limit(mountpoint string) (bool, []string, error) {

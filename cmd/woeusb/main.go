@@ -130,4 +130,24 @@ func main() {
 	} else {
 		fmt.Printf("Device size: %d bytes\n", size)
 	}
+
+	// Test formatting functionality
+	fmt.Println("\nTesting format functions:")
+
+	// Test formatting operations (will fail for non-existent partitions, which is expected)
+	err = filesystem.FormatFAT32("/dev/nonexistent")
+	if err != nil {
+		fmt.Printf("✓ Expected error for FAT32 format: %v\n", err)
+	}
+
+	err = filesystem.FormatNTFS("/dev/nonexistent", "Windows USB")
+	if err != nil {
+		fmt.Printf("✓ Expected error for NTFS format: %v\n", err)
+	}
+
+	// Test comprehensive formatting
+	err = filesystem.FormatPartition("/dev/nonexistent", "FAT32", "USB Drive")
+	if err != nil {
+		fmt.Printf("✓ Expected error for partition format: %v\n", err)
+	}
 }
