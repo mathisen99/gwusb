@@ -1,9 +1,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	"github.com/mathisen/woeusb-go/internal/bootloader"
 	"github.com/mathisen/woeusb-go/internal/copy"
@@ -11,262 +15,313 @@ import (
 	"github.com/mathisen/woeusb-go/internal/filesystem"
 	"github.com/mathisen/woeusb-go/internal/mount"
 	"github.com/mathisen/woeusb-go/internal/partition"
+	"github.com/mathisen/woeusb-go/internal/session"
 	"github.com/mathisen/woeusb-go/internal/validation"
 )
 
+const version = "0.1.0"
+
+type config struct {
+	device       bool
+	partition    bool
+	filesystem   string
+	label        string
+	biosBootFlag bool
+	skipGrub     bool
+	verbose      bool
+	noColor      bool
+	source       string
+	target       string
+}
+
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		fmt.Println("woeusb-go v0.1.0")
+	cfg := parseArgs()
+	if cfg == nil {
 		return
 	}
 
-	// Test dependency checker
-	dependencies, err := deps.CheckDependencies()
-	if err != nil {
+	// Setup session for cleanup
+	sess := &session.Session{
+		Source:      cfg.source,
+		Target:      cfg.target,
+		Mode:        getMode(cfg),
+		Filesystem:  cfg.filesystem,
+		Label:       cfg.label,
+		SkipGRUB:    cfg.skipGrub,
+		SetBootFlag: cfg.biosBootFlag,
+		Verbose:     cfg.verbose,
+		NoColor:     cfg.noColor,
+	}
+
+	// Setup signal handler for cleanup
+	sess.SetupSignalHandler()
+	defer func() { _ = sess.Cleanup() }()
+
+	// Check dependencies
+	if err := checkDependencies(); err != nil {
 		log.Fatalf("Dependency check failed: %v", err)
 	}
 
-	fmt.Println("All dependencies found:")
-	fmt.Printf("  wipefs: %s\n", dependencies.Wipefs)
-	fmt.Printf("  parted: %s\n", dependencies.Parted)
-	fmt.Printf("  lsblk: %s\n", dependencies.Lsblk)
-	fmt.Printf("  blockdev: %s\n", dependencies.Blockdev)
-	fmt.Printf("  mount: %s\n", dependencies.Mount)
-	fmt.Printf("  umount: %s\n", dependencies.Umount)
-	fmt.Printf("  7z: %s\n", dependencies.SevenZip)
-	fmt.Printf("  mkfat: %s\n", dependencies.MkFat)
-	fmt.Printf("  mkntfs: %s\n", dependencies.MkNTFS)
-	fmt.Printf("  grub: %s\n", dependencies.GrubCmd)
-
-	// Test validation functions
-	fmt.Println("\nTesting validation functions:")
-
-	// Test source validation with current file
-	err = validation.ValidateSource("go.mod")
-	if err != nil {
-		fmt.Printf("Source validation failed: %v\n", err)
-	} else {
-		fmt.Println("✓ Source validation passed for go.mod")
+	// Validate source and target
+	if err := validateInputs(cfg); err != nil {
+		log.Fatalf("Validation failed: %v", err)
 	}
 
-	// Test device naming patterns
-	testPaths := []string{"/dev/sda", "/dev/sda1", "/dev/nvme0n1", "/dev/nvme0n1p1"}
-	for _, path := range testPaths {
-		info, _ := validation.GetDeviceInfo(path)
-		if info != nil {
-			fmt.Printf("Device info for %s: is_device=%v\n", path, info["is_device"])
+	// Execute the appropriate mode
+	if cfg.device {
+		if err := executeDeviceMode(cfg, sess); err != nil {
+			log.Fatalf("Device mode failed: %v", err)
+		}
+	} else {
+		if err := executePartitionMode(cfg, sess); err != nil {
+			log.Fatalf("Partition mode failed: %v", err)
 		}
 	}
 
-	// Test mount functionality
-	fmt.Println("\nTesting mount functions:")
+	fmt.Println("✓ WoeUSB operation completed successfully!")
+}
 
-	// Check if root is mounted
-	mounted, mountpoints, err := mount.IsMounted("/")
+func parseArgs() *config {
+	var cfg config
+	var showVersion bool
+
+	flag.BoolVar(&cfg.device, "device", false, "Wipe entire device and create bootable USB")
+	flag.BoolVar(&cfg.device, "d", false, "Wipe entire device (shorthand)")
+	flag.BoolVar(&cfg.partition, "partition", false, "Use existing partition")
+	flag.BoolVar(&cfg.partition, "p", false, "Use existing partition (shorthand)")
+	flag.StringVar(&cfg.filesystem, "target-filesystem", "FAT", "Target filesystem: FAT or NTFS")
+	flag.StringVar(&cfg.label, "label", "Windows USB", "Filesystem label")
+	flag.StringVar(&cfg.label, "l", "Windows USB", "Filesystem label (shorthand)")
+	flag.BoolVar(&cfg.biosBootFlag, "workaround-bios-boot-flag", false, "Set boot flag for buggy BIOSes")
+	flag.BoolVar(&cfg.skipGrub, "workaround-skip-grub", false, "Skip GRUB installation")
+	flag.BoolVar(&cfg.verbose, "verbose", false, "Verbose output")
+	flag.BoolVar(&cfg.verbose, "v", false, "Verbose output (shorthand)")
+	flag.BoolVar(&cfg.noColor, "no-color", false, "Disable colored output")
+	flag.BoolVar(&showVersion, "version", false, "Print version")
+	flag.BoolVar(&showVersion, "V", false, "Print version (shorthand)")
+
+	flag.Usage = usage
+	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("woeusb-go %s\n", version)
+		return nil
+	}
+
+	if !cfg.device && !cfg.partition {
+		fmt.Fprintln(os.Stderr, "Error: You must specify --device or --partition")
+		usage()
+		os.Exit(1)
+	}
+
+	if cfg.device && cfg.partition {
+		fmt.Fprintln(os.Stderr, "Error: --device and --partition are mutually exclusive")
+		usage()
+		os.Exit(1)
+	}
+
+	args := flag.Args()
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, "Error: source and target are required")
+		usage()
+		os.Exit(1)
+	}
+
+	cfg.source = args[0]
+	cfg.target = args[1]
+
+	return &cfg
+}
+
+func getMode(cfg *config) string {
+	if cfg.device {
+		return "device"
+	}
+	return "partition"
+}
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "Usage: woeusb-go [--device | --partition] [options] <source> <target>\n\n")
+	fmt.Fprintf(os.Stderr, "Create a bootable Windows USB drive from an ISO or DVD.\n\n")
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	flag.PrintDefaults()
+}
+
+func checkDependencies() error {
+	_, err := deps.CheckDependencies()
+	return err
+}
+
+func validateInputs(cfg *config) error {
+	// Validate source
+	if err := validation.ValidateSource(cfg.source); err != nil {
+		return fmt.Errorf("source validation failed: %v", err)
+	}
+
+	// Validate target
+	if err := validation.ValidateTarget(cfg.target, getMode(cfg)); err != nil {
+		return fmt.Errorf("target validation failed: %v", err)
+	}
+
+	// Check if target is busy
+	if err := mount.CheckNotBusy(cfg.target); err != nil {
+		return fmt.Errorf("target busy check failed: %v", err)
+	}
+
+	return nil
+}
+
+func executeDeviceMode(cfg *config, sess *session.Session) error {
+	fmt.Printf("Starting device mode: %s -> %s\n", cfg.source, cfg.target)
+
+	// Mount source
+	srcMount, err := mountSource(cfg.source)
 	if err != nil {
-		fmt.Printf("Mount check failed: %v\n", err)
-	} else if mounted {
-		fmt.Printf("✓ Root filesystem is mounted at: %v\n", mountpoints)
+		return fmt.Errorf("failed to mount source: %v", err)
 	}
+	defer func() { _ = mount.CleanupMountpoint(srcMount) }()
 
-	// Test busy check on non-existent device
-	err = mount.CheckNotBusy("/dev/nonexistent")
+	// Determine filesystem based on content
+	suggestedFS, reason, err := filesystem.SuggestFilesystem(srcMount)
 	if err != nil {
-		fmt.Printf("Busy check failed: %v\n", err)
-	} else {
-		fmt.Println("✓ Non-existent device is not busy")
+		return fmt.Errorf("failed to analyze source content: %v", err)
 	}
 
-	// Test temp mountpoint creation
-	tempMount, err := mount.CreateTempMountpoint("woeusb-test-")
-	if err != nil {
-		fmt.Printf("Temp mountpoint creation failed: %v\n", err)
-	} else {
-		fmt.Printf("✓ Created temp mountpoint: %s\n", tempMount)
-		// Clean up
-		_ = mount.CleanupMountpoint(tempMount)
-		fmt.Println("✓ Cleaned up temp mountpoint")
+	if cfg.filesystem == "FAT" && suggestedFS == "NTFS" {
+		fmt.Printf("Warning: %s\n", reason)
+		fmt.Println("Switching to NTFS filesystem")
+		cfg.filesystem = "NTFS"
 	}
 
-	// Test filesystem functionality
-	fmt.Println("\nTesting filesystem functions:")
-
-	// Test FAT32 limit check on current directory
-	hasOversized, oversizedFiles, err := filesystem.CheckFAT32Limit(".")
-	if err != nil {
-		fmt.Printf("FAT32 limit check failed: %v\n", err)
-	} else if hasOversized {
-		fmt.Printf("⚠ Found %d files exceeding FAT32 4GB limit: %v\n", len(oversizedFiles), oversizedFiles)
-	} else {
-		fmt.Println("✓ All files in current directory are within FAT32 limits")
-	}
-
-	// Test filesystem suggestion
-	suggestedFS, reason, err := filesystem.SuggestFilesystem(".")
-	if err != nil {
-		fmt.Printf("Filesystem suggestion failed: %v\n", err)
-	} else {
-		fmt.Printf("✓ Suggested filesystem: %s (%s)\n", suggestedFS, reason)
-	}
-
-	// Test size formatting
-	testSizes := []int64{1024, 1024 * 1024, filesystem.FAT32MaxFileSize}
-	for _, size := range testSizes {
-		fmt.Printf("Size %d bytes = %s\n", size, filesystem.FormatSizeHuman(size))
-	}
-
-	// Test partition functionality
-	fmt.Println("\nTesting partition functions:")
-
-	// Test partition path generation
-	testDevices := []string{"/dev/sda", "/dev/nvme0n1", "/dev/mmcblk0"}
-	for _, device := range testDevices {
-		partPath := partition.GetPartitionPath(device)
-		fmt.Printf("Partition path for %s: %s\n", device, partPath)
-	}
-
-	// Test device size (will fail for non-existent devices, which is expected)
-	size, err := partition.GetDeviceSize("/dev/nonexistent")
-	if err != nil {
-		fmt.Printf("✓ Expected error for non-existent device: %v\n", err)
-	} else {
-		fmt.Printf("Device size: %d bytes\n", size)
-	}
-
-	// Test formatting functionality
-	fmt.Println("\nTesting format functions:")
-
-	// Test formatting operations (will fail for non-existent partitions, which is expected)
-	err = filesystem.FormatFAT32("/dev/nonexistent")
-	if err != nil {
-		fmt.Printf("✓ Expected error for FAT32 format: %v\n", err)
-	}
-
-	err = filesystem.FormatNTFS("/dev/nonexistent", "Windows USB")
-	if err != nil {
-		fmt.Printf("✓ Expected error for NTFS format: %v\n", err)
-	}
-
-	// Test comprehensive formatting
-	err = filesystem.FormatPartition("/dev/nonexistent", "FAT32", "USB Drive")
-	if err != nil {
-		fmt.Printf("✓ Expected error for partition format: %v\n", err)
-	}
-
-	// Test copy functionality
-	fmt.Println("\nTesting copy functions:")
-
-	// Create temporary directories for copy testing
-	srcDir, err := os.MkdirTemp("", "woeusb-copy-src-")
-	if err != nil {
-		fmt.Printf("Failed to create temp source dir: %v\n", err)
-	} else {
-		defer func() { _ = os.RemoveAll(srcDir) }()
-
-		dstDir, err := os.MkdirTemp("", "woeusb-copy-dst-")
+	// Create partitions and format
+	var mainPartition string
+	if cfg.filesystem == "NTFS" {
+		// Create NTFS with UEFI support
+		tempDir, err := os.MkdirTemp("", "woeusb-")
 		if err != nil {
-			fmt.Printf("Failed to create temp destination dir: %v\n", err)
-		} else {
-			defer func() { _ = os.RemoveAll(dstDir) }()
-
-			// Create test files
-			testFile := srcDir + "/test.txt"
-			if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
-				fmt.Printf("Failed to create test file: %v\n", err)
-			} else {
-				// Test copy with progress
-				fmt.Printf("Copying from %s to %s\n", srcDir, dstDir)
-				err = copy.CopyDirectoryQuiet(srcDir, dstDir)
-				if err != nil {
-					fmt.Printf("Copy failed: %v\n", err)
-				} else {
-					fmt.Println("✓ Copy completed successfully")
-
-					// Validate copy
-					err = copy.ValidateCopy(srcDir, dstDir)
-					if err != nil {
-						fmt.Printf("Copy validation failed: %v\n", err)
-					} else {
-						fmt.Println("✓ Copy validation passed")
-					}
-				}
-			}
+			return fmt.Errorf("failed to create temp directory: %v", err)
 		}
-	}
+		defer func() { _ = os.RemoveAll(tempDir) }()
 
-	// Test bootloader functionality
-	fmt.Println("\nTesting bootloader functions:")
-
-	// Test GRUB prefix detection
-	testCommands := []string{"grub-install", "grub2-install", "/usr/bin/grub-install"}
-	for _, cmd := range testCommands {
-		prefix := bootloader.DetectGRUBPrefix(cmd)
-		fmt.Printf("GRUB prefix for %s: %s\n", cmd, prefix)
-	}
-
-	// Test GRUB configuration writing
-	tmpBootDir, err := os.MkdirTemp("", "woeusb-boot-")
-	if err != nil {
-		fmt.Printf("Failed to create temp boot dir: %v\n", err)
-	} else {
-		defer func() { _ = os.RemoveAll(tmpBootDir) }()
-
-		err = bootloader.WriteGRUBConfig(tmpBootDir, "grub")
+		mainPartition, _, err = partition.CreateNTFSWithUEFI(cfg.target, tempDir)
 		if err != nil {
-			fmt.Printf("Failed to write GRUB config: %v\n", err)
-		} else {
-			fmt.Println("✓ GRUB configuration written successfully")
+			return fmt.Errorf("failed to create NTFS with UEFI: %v", err)
+		}
+	} else {
+		// Create regular bootable partition
+		if err := partition.CreateBootablePartition(cfg.target, cfg.filesystem); err != nil {
+			return fmt.Errorf("failed to create bootable partition: %v", err)
+		}
+		mainPartition = partition.GetPartitionPath(cfg.target)
+	}
 
-			// Verify installation
-			err = bootloader.CheckGRUBInstallation(tmpBootDir, "grub")
-			if err != nil {
-				fmt.Printf("GRUB installation check failed: %v\n", err)
-			} else {
-				fmt.Println("✓ GRUB installation verified")
-			}
+	// Format the main partition
+	if err := filesystem.FormatPartition(mainPartition, cfg.filesystem, cfg.label); err != nil {
+		return fmt.Errorf("failed to format partition: %v", err)
+	}
 
-			// Test Windows 7 detection
-			fmt.Println("\nTesting Windows 7 UEFI workaround:")
+	// Mount target partition
+	dstMount, err := mount.MountDevice(mainPartition, strings.ToLower(cfg.filesystem))
+	if err != nil {
+		return fmt.Errorf("failed to mount target partition: %v", err)
+	}
+	defer func() { _ = mount.CleanupMountpoint(dstMount) }()
 
-			// Test with non-Windows 7 directory
-			isWin7, err := bootloader.IsWindows7(tmpBootDir)
-			if err != nil {
-				fmt.Printf("Windows 7 check failed: %v\n", err)
-			} else {
-				fmt.Printf("Is Windows 7: %v\n", isWin7)
-			}
+	// Copy files
+	fmt.Println("Copying files...")
+	if err := copy.CopyWithProgress(srcMount, dstMount, copy.PrintProgress); err != nil {
+		return fmt.Errorf("failed to copy files: %v", err)
+	}
+	fmt.Println() // New line after progress
 
-			// Test UEFI bootloader check
-			err = bootloader.CheckUEFIBootloader(tmpBootDir)
-			if err != nil {
-				fmt.Printf("✓ Expected error for missing UEFI bootloader: %v\n", err)
-			}
+	// Apply Windows 7 UEFI workaround if needed
+	if err := bootloader.ApplyWindows7UEFIWorkaround(srcMount, dstMount); err != nil {
+		return fmt.Errorf("failed to apply Windows 7 UEFI workaround: %v", err)
+	}
 
-			// Test UEFI:NTFS functionality
-			fmt.Println("\nTesting UEFI:NTFS functions:")
-
-			// Test UEFI:NTFS partition creation (will fail for non-existent device)
-			_, err = partition.CreateUEFINTFSPartition("/dev/nonexistent")
-			if err != nil {
-				fmt.Printf("✓ Expected error for UEFI:NTFS partition creation: %v\n", err)
-			}
-
-			// Test UEFI:NTFS installation
-			err = partition.InstallUEFINTFS("/dev/nonexistent", tmpBootDir)
-			if err != nil {
-				fmt.Printf("UEFI:NTFS installation failed: %v\n", err)
-			} else {
-				fmt.Println("✓ UEFI:NTFS installation handled gracefully")
-			}
-
-			// Test boot flag functionality
-			fmt.Println("\nTesting boot flag workaround:")
-
-			// Test setting boot flag (will fail for non-existent device)
-			err = partition.SetBootFlag("/dev/nonexistent", 1)
-			if err != nil {
-				fmt.Printf("✓ Expected error for boot flag setting: %v\n", err)
-			}
+	// Install GRUB if not skipped
+	if !cfg.skipGrub {
+		dependencies, _ := deps.CheckDependencies()
+		if err := bootloader.InstallGRUBWithConfig(dstMount, cfg.target, dependencies.GrubCmd); err != nil {
+			return fmt.Errorf("failed to install GRUB: %v", err)
 		}
 	}
+
+	// Set boot flag if requested
+	if cfg.biosBootFlag {
+		if err := partition.SetBootFlag(cfg.target, 1); err != nil {
+			return fmt.Errorf("failed to set boot flag: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func executePartitionMode(cfg *config, sess *session.Session) error {
+	fmt.Printf("Starting partition mode: %s -> %s\n", cfg.source, cfg.target)
+
+	// Mount source
+	srcMount, err := mountSource(cfg.source)
+	if err != nil {
+		return fmt.Errorf("failed to mount source: %v", err)
+	}
+	defer func() { _ = mount.CleanupMountpoint(srcMount) }()
+
+	// Validate filesystem choice
+	if err := filesystem.ValidateFilesystemChoice(srcMount, cfg.filesystem); err != nil {
+		return fmt.Errorf("filesystem validation failed: %v", err)
+	}
+
+	// Format the partition
+	if err := filesystem.FormatPartition(cfg.target, cfg.filesystem, cfg.label); err != nil {
+		return fmt.Errorf("failed to format partition: %v", err)
+	}
+
+	// Mount target partition
+	dstMount, err := mount.MountDevice(cfg.target, strings.ToLower(cfg.filesystem))
+	if err != nil {
+		return fmt.Errorf("failed to mount target partition: %v", err)
+	}
+	defer func() { _ = mount.CleanupMountpoint(dstMount) }()
+
+	// Copy files
+	fmt.Println("Copying files...")
+	if err := copy.CopyWithProgress(srcMount, dstMount, copy.PrintProgress); err != nil {
+		return fmt.Errorf("failed to copy files: %v", err)
+	}
+	fmt.Println() // New line after progress
+
+	// Apply Windows 7 UEFI workaround if needed
+	if err := bootloader.ApplyWindows7UEFIWorkaround(srcMount, dstMount); err != nil {
+		return fmt.Errorf("failed to apply Windows 7 UEFI workaround: %v", err)
+	}
+
+	return nil
+}
+
+func mountSource(source string) (string, error) {
+	// Check if source is an ISO file or block device
+	info, err := os.Stat(source)
+	if err != nil {
+		return "", err
+	}
+
+	if info.Mode().IsRegular() {
+		// ISO file
+		return mount.MountISO(source)
+	} else {
+		// Block device - detect filesystem
+		return mount.MountDevice(source, "auto")
+	}
+}
+
+func init() {
+	// Setup signal handling for graceful shutdown
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		fmt.Println("\nReceived interrupt signal, cleaning up...")
+		os.Exit(1)
+	}()
 }

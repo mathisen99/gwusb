@@ -91,10 +91,10 @@
 - **Relates to:** AC-10
 
 ## Task 16: Main Orchestration
-- [ ] Wire all components together in `main.go`
-- [ ] Implement full device mode flow
-- [ ] Implement full partition mode flow
-- [ ] Ensure cleanup runs on all exit paths
+- [x] Wire all components together in `main.go`
+- [x] Implement full device mode flow
+- [x] Implement full partition mode flow
+- [x] Ensure cleanup runs on all exit paths
 - **Relates to:** All ACs
 
 ## Task 17: Testing
