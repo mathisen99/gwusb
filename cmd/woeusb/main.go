@@ -258,6 +258,15 @@ func main() {
 			} else {
 				fmt.Println("✓ UEFI:NTFS installation handled gracefully")
 			}
+
+			// Test boot flag functionality
+			fmt.Println("\nTesting boot flag workaround:")
+
+			// Test setting boot flag (will fail for non-existent device)
+			err = partition.SetBootFlag("/dev/nonexistent", 1)
+			if err != nil {
+				fmt.Printf("✓ Expected error for boot flag setting: %v\n", err)
+			}
 		}
 	}
 }

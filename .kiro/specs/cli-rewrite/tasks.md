@@ -87,7 +87,7 @@
 - **Relates to:** AC-6
 
 ## Task 15: Boot Flag Workaround
-- [ ] Implement `SetBootFlag(device, partNum)` — run `parted set N boot on`
+- [x] Implement `SetBootFlag(device, partNum)` — run `parted set N boot on`
 - **Relates to:** AC-10
 
 ## Task 16: Main Orchestration
