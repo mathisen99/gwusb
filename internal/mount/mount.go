@@ -204,9 +204,14 @@ func MountISO(isoPath string) (string, error) {
 		return "", err
 	}
 
-	if err := Mount(isoPath, mountpoint, "iso9660", []string{"ro", "loop"}); err != nil {
-		_ = os.RemoveAll(mountpoint)
-		return "", fmt.Errorf("failed to mount ISO %s: %v", isoPath, err)
+	// Try UDF first (Windows 10/11 ISOs), then fall back to iso9660
+	// Using "auto" lets the kernel detect the correct filesystem
+	if err := Mount(isoPath, mountpoint, "udf", []string{"ro", "loop"}); err != nil {
+		// Fallback to iso9660 for older ISOs
+		if err := Mount(isoPath, mountpoint, "iso9660", []string{"ro", "loop"}); err != nil {
+			_ = os.RemoveAll(mountpoint)
+			return "", fmt.Errorf("failed to mount ISO %s: %v", isoPath, err)
+		}
 	}
 
 	return mountpoint, nil
@@ -219,10 +224,15 @@ func MountDevice(devicePath, fstype string) (string, error) {
 		return "", err
 	}
 
-	opts := []string{}
-	if fstype == "ntfs" {
-		opts = append(opts, "ro") // Mount NTFS read-only by default
+	// Normalize filesystem type
+	switch strings.ToLower(fstype) {
+	case "fat", "fat32", "vfat":
+		fstype = "vfat"
+	case "ntfs", "ntfs-3g":
+		fstype = "ntfs3" // Use kernel ntfs3 driver (faster than ntfs-3g FUSE)
 	}
+
+	opts := []string{}
 
 	if err := Mount(devicePath, mountpoint, fstype, opts); err != nil {
 		_ = os.RemoveAll(mountpoint)

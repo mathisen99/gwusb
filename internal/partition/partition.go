@@ -13,8 +13,16 @@ import (
 
 // CreateUEFINTFSPartition creates a 512KB partition at the end of the device for UEFI:NTFS
 func CreateUEFINTFSPartition(device string) (string, error) {
+	// Get device size to calculate start position
+	size, err := GetDeviceSize(device)
+	if err != nil {
+		return "", fmt.Errorf("failed to get device size: %v", err)
+	}
+	// Start 512KiB from the end
+	startBytes := size - 524288
+
 	// Create a small partition at the end of the device
-	cmd := exec.Command("parted", "-s", device, "mkpart", "primary", "fat32", "-512KiB", "100%")
+	cmd := exec.Command("parted", "-s", "--", device, "mkpart", "primary", "fat32", fmt.Sprintf("%dB", startBytes), "100%")
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to create UEFI:NTFS partition on %s: %v", device, err)
 	}
@@ -172,16 +180,23 @@ func CreatePartition(device, fstype string) error {
 		start = "1MiB"
 		end = "100%"
 	case "NTFS":
-		// For NTFS, we might want to leave space for UEFI:NTFS partition
+		// For NTFS, leave space for UEFI:NTFS partition at the end
 		partType = "primary"
 		start = "1MiB"
-		end = "-512KiB" // Leave 512KB at the end
+		// Calculate end position: total size minus 512KiB
+		size, err := GetDeviceSize(device)
+		if err != nil {
+			return fmt.Errorf("failed to get device size: %v", err)
+		}
+		// End position in bytes, leaving 512KiB (524288 bytes) at the end
+		endBytes := size - 524288
+		end = fmt.Sprintf("%dB", endBytes)
 	default:
 		return fmt.Errorf("unsupported filesystem type: %s", fstype)
 	}
 
-	// Create the partition
-	cmd := exec.Command("parted", "-s", device, "mkpart", partType, start, end)
+	// Create the partition using -- to separate options from arguments
+	cmd := exec.Command("parted", "-s", "--", device, "mkpart", partType, start, end)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to create partition on %s: %v", device, err)
 	}
