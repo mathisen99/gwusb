@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/mathisen/woeusb-go/internal/deps"
+	"github.com/mathisen/woeusb-go/internal/filesystem"
 	"github.com/mathisen/woeusb-go/internal/mount"
 	"github.com/mathisen/woeusb-go/internal/validation"
 )
@@ -82,5 +83,32 @@ func main() {
 		// Clean up
 		_ = mount.CleanupMountpoint(tempMount)
 		fmt.Println("✓ Cleaned up temp mountpoint")
+	}
+
+	// Test filesystem functionality
+	fmt.Println("\nTesting filesystem functions:")
+
+	// Test FAT32 limit check on current directory
+	hasOversized, oversizedFiles, err := filesystem.CheckFAT32Limit(".")
+	if err != nil {
+		fmt.Printf("FAT32 limit check failed: %v\n", err)
+	} else if hasOversized {
+		fmt.Printf("⚠ Found %d files exceeding FAT32 4GB limit: %v\n", len(oversizedFiles), oversizedFiles)
+	} else {
+		fmt.Println("✓ All files in current directory are within FAT32 limits")
+	}
+
+	// Test filesystem suggestion
+	suggestedFS, reason, err := filesystem.SuggestFilesystem(".")
+	if err != nil {
+		fmt.Printf("Filesystem suggestion failed: %v\n", err)
+	} else {
+		fmt.Printf("✓ Suggested filesystem: %s (%s)\n", suggestedFS, reason)
+	}
+
+	// Test size formatting
+	testSizes := []int64{1024, 1024 * 1024, filesystem.FAT32MaxFileSize}
+	for _, size := range testSizes {
+		fmt.Printf("Size %d bytes = %s\n", size, filesystem.FormatSizeHuman(size))
 	}
 }

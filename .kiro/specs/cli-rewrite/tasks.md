@@ -44,8 +44,8 @@
 - **Relates to:** AC-7, AC-11
 
 ## Task 8: FAT32 Limit Check
-- [ ] Implement `CheckFAT32Limit(mountpoint)` — walk files, return true if any >4GB
-- [ ] Auto-switch filesystem to NTFS and print warning
+- [x] Implement `CheckFAT32Limit(mountpoint)` — walk files, return true if any >4GB
+- [x] Auto-switch filesystem to NTFS and print warning
 - **Relates to:** AC-4
 
 ## Task 9: Partition Operations (Device Mode)
