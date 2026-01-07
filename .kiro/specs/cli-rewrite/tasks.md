@@ -38,9 +38,9 @@
 - **Relates to:** AC-3
 
 ## Task 7: Mount/Unmount Operations
-- [ ] Implement `Mount(source, mountpoint, fstype, opts)` using syscall or shell
-- [ ] Implement `Unmount(mountpoint)` using syscall or shell
-- [ ] Create temp mountpoints using `os.MkdirTemp`
+- [x] Implement `Mount(source, mountpoint, fstype, opts)` using syscall or shell
+- [x] Implement `Unmount(mountpoint)` using syscall or shell
+- [x] Create temp mountpoints using `os.MkdirTemp`
 - **Relates to:** AC-7, AC-11
 
 ## Task 8: FAT32 Limit Check

@@ -72,4 +72,15 @@ func main() {
 	} else {
 		fmt.Println("✓ Non-existent device is not busy")
 	}
+
+	// Test temp mountpoint creation
+	tempMount, err := mount.CreateTempMountpoint("woeusb-test-")
+	if err != nil {
+		fmt.Printf("Temp mountpoint creation failed: %v\n", err)
+	} else {
+		fmt.Printf("✓ Created temp mountpoint: %s\n", tempMount)
+		// Clean up
+		_ = mount.CleanupMountpoint(tempMount)
+		fmt.Println("✓ Cleaned up temp mountpoint")
+	}
 }

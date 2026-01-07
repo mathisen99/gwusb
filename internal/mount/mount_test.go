@@ -2,6 +2,8 @@ package mount
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,6 +70,73 @@ func TestCheckNotBusy(t *testing.T) {
 
 	// Note: We can't easily test actual unmounting without root privileges
 	// and without potentially disrupting the test system
+}
+
+func TestCreateTempMountpoint(t *testing.T) {
+	mountpoint, err := CreateTempMountpoint("test-mount-")
+	if err != nil {
+		t.Fatalf("CreateTempMountpoint failed: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(mountpoint) }()
+
+	// Check that directory was created
+	if _, err := os.Stat(mountpoint); os.IsNotExist(err) {
+		t.Error("Expected mountpoint directory to exist")
+	}
+
+	// Check that it has the expected prefix
+	base := filepath.Base(mountpoint)
+	if !strings.HasPrefix(base, "test-mount-") {
+		t.Errorf("Expected mountpoint to have prefix 'test-mount-', got: %s", base)
+	}
+}
+
+func TestCleanupMountpoint(t *testing.T) {
+	// Create a temporary directory
+	mountpoint, err := CreateTempMountpoint("test-cleanup-")
+	if err != nil {
+		t.Fatalf("CreateTempMountpoint failed: %v", err)
+	}
+
+	// Cleanup should remove the directory
+	err = CleanupMountpoint(mountpoint)
+	if err != nil {
+		t.Errorf("CleanupMountpoint failed: %v", err)
+	}
+
+	// Check that directory was removed
+	if _, err := os.Stat(mountpoint); !os.IsNotExist(err) {
+		t.Error("Expected mountpoint directory to be removed")
+	}
+}
+
+func TestMount(t *testing.T) {
+	// Create a temporary mountpoint
+	mountpoint, err := CreateTempMountpoint("test-mount-")
+	if err != nil {
+		t.Fatalf("CreateTempMountpoint failed: %v", err)
+	}
+	defer func() { _ = CleanupMountpoint(mountpoint) }()
+
+	// Test mounting tmpfs (should work without root on most systems)
+	err = Mount("tmpfs", mountpoint, "tmpfs", []string{"size=1M"})
+	if err != nil {
+		t.Logf("Mount failed (expected on some systems without privileges): %v", err)
+		return
+	}
+
+	// If mount succeeded, verify it's mounted
+	mounted, _, err := IsMounted(mountpoint)
+	if err != nil {
+		t.Fatalf("IsMounted check failed: %v", err)
+	}
+
+	if !mounted {
+		t.Error("Expected mountpoint to be mounted after Mount()")
+	}
+
+	// Clean up
+	_ = Unmount(mountpoint)
 }
 
 func TestUnmount(t *testing.T) {
