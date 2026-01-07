@@ -179,7 +179,7 @@ func DetectGRUBPrefix(grubCmd string) string {
 
 // generateGRUBConfig generates a basic GRUB configuration for Windows USB
 // Uses ntldr to chainload Windows bootmgr, matching the original WoeUSB-ng behavior
-func generateGRUBConfig(grubPrefix string) string {
+func generateGRUBConfig(_ string) string {
 	return `ntldr /bootmgr
 boot
 `

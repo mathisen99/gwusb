@@ -123,9 +123,35 @@ func TestSessionFields(t *testing.T) {
 	if session.Source != "/path/to/source.iso" {
 		t.Errorf("Expected Source '/path/to/source.iso', got '%s'", session.Source)
 	}
-
+	if session.Target != "/dev/sdb" {
+		t.Errorf("Expected Target '/dev/sdb', got '%s'", session.Target)
+	}
+	if session.TargetDevice != "/dev/sdb" {
+		t.Errorf("Expected TargetDevice '/dev/sdb', got '%s'", session.TargetDevice)
+	}
+	if session.TargetPartition != "/dev/sdb1" {
+		t.Errorf("Expected TargetPartition '/dev/sdb1', got '%s'", session.TargetPartition)
+	}
 	if session.Mode != "device" {
 		t.Errorf("Expected Mode 'device', got '%s'", session.Mode)
+	}
+	if session.Label != "WINDOWS" {
+		t.Errorf("Expected Label 'WINDOWS', got '%s'", session.Label)
+	}
+	if session.SourceMount != "/tmp/source" {
+		t.Errorf("Expected SourceMount '/tmp/source', got '%s'", session.SourceMount)
+	}
+	if session.TargetMount != "/tmp/target" {
+		t.Errorf("Expected TargetMount '/tmp/target', got '%s'", session.TargetMount)
+	}
+	if session.TempDir != "/tmp/temp" {
+		t.Errorf("Expected TempDir '/tmp/temp', got '%s'", session.TempDir)
+	}
+	if session.SkipGRUB != false {
+		t.Errorf("Expected SkipGRUB false, got %v", session.SkipGRUB)
+	}
+	if session.NoColor != false {
+		t.Errorf("Expected NoColor false, got %v", session.NoColor)
 	}
 
 	if session.Filesystem != "FAT32" {
