@@ -56,8 +56,8 @@
 - **Relates to:** AC-5, AC-6
 
 ## Task 10: Format Operations
-- [ ] Implement `FormatFAT32(partition)` — run `mkdosfs -F 32`
-- [ ] Implement `FormatNTFS(partition, label)` — run `mkntfs --quick --label`
+- [x] Implement `FormatFAT32(partition)` — run `mkdosfs -F 32`
+- [x] Implement `FormatNTFS(partition, label)` — run `mkntfs --quick --label`
 - **Relates to:** AC-6
 
 ## Task 11: File Copying with Progress

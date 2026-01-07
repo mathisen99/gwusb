@@ -151,3 +151,47 @@ func TestValidateFilesystemChoice(t *testing.T) {
 		t.Errorf("Expected no error for NTFS, got: %v", err)
 	}
 }
+
+func TestFormatFAT32(t *testing.T) {
+	// Test with non-existent partition (should fail gracefully)
+	err := FormatFAT32("/dev/nonexistent")
+	if err == nil {
+		t.Error("Expected error when formatting non-existent partition")
+	}
+}
+
+func TestFormatNTFS(t *testing.T) {
+	// Test with non-existent partition (should fail gracefully)
+	err := FormatNTFS("/dev/nonexistent", "TestLabel")
+	if err == nil {
+		t.Error("Expected error when formatting non-existent partition")
+	}
+
+	// Test without label
+	err = FormatNTFS("/dev/nonexistent", "")
+	if err == nil {
+		t.Error("Expected error when formatting non-existent partition")
+	}
+}
+
+func TestFormatPartition(t *testing.T) {
+	// Test with non-existent partition (should fail gracefully)
+	err := FormatPartition("/dev/nonexistent", "FAT32", "TestLabel")
+	if err == nil {
+		t.Error("Expected error when formatting non-existent partition")
+	}
+
+	// Test with unsupported filesystem
+	err = FormatPartition("/dev/nonexistent", "UNSUPPORTED", "TestLabel")
+	if err == nil {
+		t.Error("Expected error for unsupported filesystem type")
+	}
+}
+
+func TestSetFAT32Label(t *testing.T) {
+	// Test with non-existent partition (should fail gracefully)
+	err := SetFAT32Label("/dev/nonexistent", "TestLabel")
+	if err == nil {
+		t.Error("Expected error when setting label on non-existent partition")
+	}
+}
