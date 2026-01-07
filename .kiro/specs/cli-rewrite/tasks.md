@@ -1,9 +1,9 @@
 # Tasks: CLI Rewrite (Go)
 
 ## Task 1: Project Scaffold
-- [ ] Create `go.mod` with module name `github.com/user/woeusb-go`
-- [ ] Create directory structure: `cmd/woeusb/`, `internal/{device,partition,filesystem,bootloader,session}/`
-- [ ] Create stub `main.go` that prints version
+- [x] Create `go.mod` with module name `github.com/user/woeusb-go`
+- [x] Create directory structure: `cmd/woeusb/`, `internal/{device,partition,filesystem,bootloader,session}/`
+- [x] Create stub `main.go` that prints version
 - **Relates to:** All requirements (foundation)
 
 ## Task 2: CLI Argument Parsing
