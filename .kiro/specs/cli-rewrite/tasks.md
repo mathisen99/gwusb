@@ -19,11 +19,11 @@
 - **Relates to:** AC-11
 
 ## Task 4: Dependency Checker
-- [ ] Implement `CheckDependencies()` that verifies: wipefs, parted, lsblk, blockdev, mount, umount, 7z
-- [ ] Find mkdosfs/mkfs.vfat/mkfs.fat (return first found)
-- [ ] Find mkntfs
-- [ ] Find grub-install or grub2-install
-- [ ] Return clear error listing missing dependencies
+- [x] Implement `CheckDependencies()` that verifies: wipefs, parted, lsblk, blockdev, mount, umount, 7z
+- [x] Find mkdosfs/mkfs.vfat/mkfs.fat (return first found)
+- [x] Find mkntfs
+- [x] Find grub-install or grub2-install
+- [x] Return clear error listing missing dependencies
 - **Relates to:** AC-2
 
 ## Task 5: Source/Target Validation
