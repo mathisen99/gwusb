@@ -27,9 +27,9 @@
 - **Relates to:** AC-2
 
 ## Task 5: Source/Target Validation
-- [ ] Implement `ValidateSource(path)` — check exists, is file or block device
-- [ ] Implement `ValidateTarget(path, mode)` — check block device, device vs partition based on mode
-- [ ] Handle both `/dev/sdX` and `/dev/nvme0n1` naming patterns
+- [x] Implement `ValidateSource(path)` — check exists, is file or block device
+- [x] Implement `ValidateTarget(path, mode)` — check block device, device vs partition based on mode
+- [x] Handle both `/dev/sdX` and `/dev/nvme0n1` naming patterns
 - **Relates to:** AC-3
 
 ## Task 6: Busy Check
