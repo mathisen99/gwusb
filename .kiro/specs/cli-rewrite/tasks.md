@@ -7,9 +7,9 @@
 - **Relates to:** All requirements (foundation)
 
 ## Task 2: CLI Argument Parsing
-- [ ] Implement flag parsing: `--device`, `--partition`, `--target-filesystem`, `--label`, `--workaround-bios-boot-flag`, `--workaround-skip-grub`, `--verbose`, `--no-color`, `--version`
-- [ ] Validate mutually exclusive `--device` / `--partition`
-- [ ] Print usage on `--help` or invalid args
+- [x] Implement flag parsing: `--device`, `--partition`, `--target-filesystem`, `--label`, `--workaround-bios-boot-flag`, `--workaround-skip-grub`, `--verbose`, `--no-color`, `--version`
+- [x] Validate mutually exclusive `--device` / `--partition`
+- [x] Print usage on `--help` or invalid args
 - **Relates to:** AC-1
 
 ## Task 3: Session and Cleanup
