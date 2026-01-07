@@ -6,55 +6,55 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
 
 ## Tasks
 
-- [ ] 1. Add Fyne dependency and update project structure
+- [x] 1. Add Fyne dependency and update project structure
   - Add `fyne.io/fyne/v2` to go.mod
   - Create `internal/gui/` directory structure
   - Create `internal/distro/` directory structure
   - _Requirements: 7.1, 7.3_
 
-- [ ] 2. Implement distro detection
-  - [ ] 2.1 Create internal/distro/detect.go with Info struct and Detect function
+- [x] 2. Implement distro detection
+  - [x] 2.1 Create internal/distro/detect.go with Info struct and Detect function
     - Parse /etc/os-release file
     - Extract ID, ID_LIKE, NAME, VERSION fields
     - Determine package manager from distro ID
     - _Requirements: 6.1_
   
-  - [ ] 2.2 Write property test for distro detection
+  - [x] 2.2 Write property test for distro detection
     - **Property 4: Distro Detection from os-release**
     - **Validates: Requirements 6.1**
   
-  - [ ] 2.3 Create internal/distro/packages.go with package mappings
+  - [x] 2.3 Create internal/distro/packages.go with package mappings
     - Define RequiredBinaries and OptionalBinaries lists
     - Create packageMappings map for all supported distros
     - Create installCommands map for package managers
     - Implement GetPackageName and GetInstallCommand functions
     - _Requirements: 6.2, 6.3, 6.4_
   
-  - [ ] 2.4 Write property tests for package mapping
+  - [x] 2.4 Write property tests for package mapping
     - **Property 5: Package Name Mapping**
     - **Property 6: Install Command Generation**
     - **Validates: Requirements 6.2, 6.3**
 
-- [ ] 3. Checkpoint - Ensure distro detection tests pass
+- [x] 3. Checkpoint - Ensure distro detection tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement USB device detection
-  - [ ] 4.1 Create internal/gui/components/device_selector.go
+- [x] 4. Implement USB device detection
+  - [x] 4.1 Create internal/gui/components/device_selector.go
     - Define USBDevice struct
     - Implement GetUSBDevices using lsblk JSON output
     - Filter for removable=true AND tran=usb
     - Exclude sata, nvme, ata transport types
     - _Requirements: 2.1, 2.2_
   
-  - [ ] 4.2 Write property test for USB device filtering
+  - [x] 4.2 Write property test for USB device filtering
     - **Property 1: USB Device Filtering**
     - **Validates: Requirements 2.1, 2.2**
   
-  - [ ] 4.3 Implement device display formatting
+  - [x] 4.3 Implement device display formatting
     - Format device path, size, and model for display
     - _Requirements: 2.3_
   
-  - [ ] 4.4 Write property test for device display
+  - [x] 4.4 Write property test for device display
     - **Property 9: Device Display Information**
     - **Validates: Requirements 2.3**
 
@@ -64,7 +64,7 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - Return MissingDep structs with distro-specific package names
     - _Requirements: 1.3, 6.2_
   
-  - [ ]* 5.2 Write property test for dependency detection
+  - [ ] 5.2 Write property test for dependency detection
     - **Property 3: Dependency Binary Detection**
     - **Validates: Requirements 1.3**
 
@@ -78,7 +78,7 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - Implement CheckDependencies method
     - _Requirements: 1.1, 1.2, 1.3_
   
-  - [ ]* 7.2 Write property test for root privilege detection
+  - [ ] 7.2 Write property test for root privilege detection
     - **Property 2: Root Privilege Detection**
     - **Validates: Requirements 1.2**
   
@@ -87,7 +87,7 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - Implement ValidateISO function
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ]* 7.4 Write property test for ISO validation
+  - [ ] 7.4 Write property test for ISO validation
     - **Property 10: ISO File Validation**
     - **Validates: Requirements 3.3**
   
@@ -96,7 +96,7 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - Implement Reset method
     - _Requirements: 5.1, 5.2_
   
-  - [ ]* 7.6 Write property test for progress bar updates
+  - [ ] 7.6 Write property test for progress bar updates
     - **Property 8: Progress Bar Updates**
     - **Validates: Requirements 5.1**
   
@@ -115,11 +115,11 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - Implement UpdateState for button enable/disable logic
     - _Requirements: 4.1, 4.5_
   
-  - [ ]* 9.2 Write property test for start button state
+  - [ ] 9.2 Write property test for start button state
     - **Property 7: Start Button State**
     - **Validates: Requirements 4.1**
   
-  - [ ]* 9.3 Write property test for UI controls during operation
+  - [ ] 9.3 Write property test for UI controls during operation
     - **Property 11: UI Controls Disabled During Operation**
     - **Validates: Requirements 4.5**
   
@@ -151,7 +151,7 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
 
 ## Notes
 
-- Tasks marked with `*` are optional property-based tests
+- All property-based tests are required
 - Fyne requires OpenGL support on the system
 - The GUI reuses existing internal packages for actual USB operations
 - Property tests should run minimum 100 iterations each
