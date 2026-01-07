@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/mathisen/woeusb-go/internal/bootloader"
 	"github.com/mathisen/woeusb-go/internal/copy"
 	"github.com/mathisen/woeusb-go/internal/deps"
 	"github.com/mathisen/woeusb-go/internal/filesystem"
@@ -189,6 +190,39 @@ func main() {
 						fmt.Println("✓ Copy validation passed")
 					}
 				}
+			}
+		}
+	}
+
+	// Test bootloader functionality
+	fmt.Println("\nTesting bootloader functions:")
+
+	// Test GRUB prefix detection
+	testCommands := []string{"grub-install", "grub2-install", "/usr/bin/grub-install"}
+	for _, cmd := range testCommands {
+		prefix := bootloader.DetectGRUBPrefix(cmd)
+		fmt.Printf("GRUB prefix for %s: %s\n", cmd, prefix)
+	}
+
+	// Test GRUB configuration writing
+	tmpBootDir, err := os.MkdirTemp("", "woeusb-boot-")
+	if err != nil {
+		fmt.Printf("Failed to create temp boot dir: %v\n", err)
+	} else {
+		defer func() { _ = os.RemoveAll(tmpBootDir) }()
+
+		err = bootloader.WriteGRUBConfig(tmpBootDir, "grub")
+		if err != nil {
+			fmt.Printf("Failed to write GRUB config: %v\n", err)
+		} else {
+			fmt.Println("✓ GRUB configuration written successfully")
+
+			// Verify installation
+			err = bootloader.CheckGRUBInstallation(tmpBootDir, "grub")
+			if err != nil {
+				fmt.Printf("GRUB installation check failed: %v\n", err)
+			} else {
+				fmt.Println("✓ GRUB installation verified")
 			}
 		}
 	}

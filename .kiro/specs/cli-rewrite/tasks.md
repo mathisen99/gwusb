@@ -69,9 +69,9 @@
 - **Relates to:** AC-7
 
 ## Task 12: GRUB Bootloader
-- [ ] Implement `InstallGRUB(mountpoint, device, grubCmd)` — run grub-install
-- [ ] Implement `WriteGRUBConfig(mountpoint, grubPrefix)` — write grub.cfg
-- [ ] Detect grub vs grub2 prefix from command name
+- [x] Implement `InstallGRUB(mountpoint, device, grubCmd)` — run grub-install
+- [x] Implement `WriteGRUBConfig(mountpoint, grubPrefix)` — write grub.cfg
+- [x] Detect grub vs grub2 prefix from command name
 - **Relates to:** AC-8
 
 ## Task 13: Windows 7 UEFI Workaround
