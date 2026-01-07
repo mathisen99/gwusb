@@ -224,6 +224,23 @@ func main() {
 			} else {
 				fmt.Println("✓ GRUB installation verified")
 			}
+
+			// Test Windows 7 detection
+			fmt.Println("\nTesting Windows 7 UEFI workaround:")
+
+			// Test with non-Windows 7 directory
+			isWin7, err := bootloader.IsWindows7(tmpBootDir)
+			if err != nil {
+				fmt.Printf("Windows 7 check failed: %v\n", err)
+			} else {
+				fmt.Printf("Is Windows 7: %v\n", isWin7)
+			}
+
+			// Test UEFI bootloader check
+			err = bootloader.CheckUEFIBootloader(tmpBootDir)
+			if err != nil {
+				fmt.Printf("✓ Expected error for missing UEFI bootloader: %v\n", err)
+			}
 		}
 	}
 }

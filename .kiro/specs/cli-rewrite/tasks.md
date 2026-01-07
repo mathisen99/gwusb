@@ -75,9 +75,9 @@
 - **Relates to:** AC-8
 
 ## Task 13: Windows 7 UEFI Workaround
-- [ ] Implement `IsWindows7(srcMount)` — check cversion.ini for MinServer=7xxx
-- [ ] Implement `ExtractBootloader(srcMount, dstMount)` — run `7z e -so` to extract bootmgfw.efi
-- [ ] Place at `/efi/boot/bootx64.efi`
+- [x] Implement `IsWindows7(srcMount)` — check cversion.ini for MinServer=7xxx
+- [x] Implement `ExtractBootloader(srcMount, dstMount)` — run `7z e -so` to extract bootmgfw.efi
+- [x] Place at `/efi/boot/bootx64.efi`
 - **Relates to:** AC-9
 
 ## Task 14: UEFI:NTFS Partition (NTFS Mode)
