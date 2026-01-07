@@ -8,6 +8,7 @@ import (
 	"github.com/mathisen/woeusb-go/internal/deps"
 	"github.com/mathisen/woeusb-go/internal/filesystem"
 	"github.com/mathisen/woeusb-go/internal/mount"
+	"github.com/mathisen/woeusb-go/internal/partition"
 	"github.com/mathisen/woeusb-go/internal/validation"
 )
 
@@ -110,5 +111,23 @@ func main() {
 	testSizes := []int64{1024, 1024 * 1024, filesystem.FAT32MaxFileSize}
 	for _, size := range testSizes {
 		fmt.Printf("Size %d bytes = %s\n", size, filesystem.FormatSizeHuman(size))
+	}
+
+	// Test partition functionality
+	fmt.Println("\nTesting partition functions:")
+
+	// Test partition path generation
+	testDevices := []string{"/dev/sda", "/dev/nvme0n1", "/dev/mmcblk0"}
+	for _, device := range testDevices {
+		partPath := partition.GetPartitionPath(device)
+		fmt.Printf("Partition path for %s: %s\n", device, partPath)
+	}
+
+	// Test device size (will fail for non-existent devices, which is expected)
+	size, err := partition.GetDeviceSize("/dev/nonexistent")
+	if err != nil {
+		fmt.Printf("✓ Expected error for non-existent device: %v\n", err)
+	} else {
+		fmt.Printf("Device size: %d bytes\n", size)
 	}
 }

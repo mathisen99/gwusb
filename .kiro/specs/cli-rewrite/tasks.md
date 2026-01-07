@@ -49,10 +49,10 @@
 - **Relates to:** AC-4
 
 ## Task 9: Partition Operations (Device Mode)
-- [ ] Implement `Wipe(device)` — run `wipefs --all`, verify no partitions remain
-- [ ] Implement `CreateMBRTable(device)` — run `parted mklabel msdos`
-- [ ] Implement `CreatePartition(device, fstype)` — run `parted mkpart` with correct start/end
-- [ ] Implement `RereadPartitionTable(device)` — run `blockdev --rereadpt`, sleep 3s
+- [x] Implement `Wipe(device)` — run `wipefs --all`, verify no partitions remain
+- [x] Implement `CreateMBRTable(device)` — run `parted mklabel msdos`
+- [x] Implement `CreatePartition(device, fstype)` — run `parted mkpart` with correct start/end
+- [x] Implement `RereadPartitionTable(device)` — run `blockdev --rereadpt`, sleep 3s
 - **Relates to:** AC-5, AC-6
 
 ## Task 10: Format Operations
