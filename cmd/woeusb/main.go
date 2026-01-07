@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -102,11 +103,13 @@ func main() {
 func parseArgs() *config {
 	var cfg config
 	var showVersion bool
+	var checkDepsOnly bool
 
 	flag.BoolVar(&cfg.device, "device", false, "Wipe entire device and create bootable USB")
 	flag.BoolVar(&cfg.device, "d", false, "Wipe entire device (shorthand)")
 	flag.BoolVar(&cfg.partition, "partition", false, "Use existing partition")
 	flag.BoolVar(&cfg.partition, "p", false, "Use existing partition (shorthand)")
+	flag.BoolVar(&checkDepsOnly, "check-deps", false, "Check if all required dependencies are installed and exit")
 	flag.StringVar(&cfg.filesystem, "target-filesystem", "FAT", "Target filesystem: FAT or NTFS")
 	flag.StringVar(&cfg.label, "label", "Windows USB", "Filesystem label")
 	flag.StringVar(&cfg.label, "l", "Windows USB", "Filesystem label (shorthand)")
@@ -123,6 +126,12 @@ func parseArgs() *config {
 
 	if showVersion {
 		fmt.Printf("woeusb-go %s\n", version)
+		return nil
+	}
+
+	// Handle --check-deps flag
+	if checkDepsOnly {
+		runDependencyCheck()
 		return nil
 	}
 
@@ -151,6 +160,86 @@ func parseArgs() *config {
 	return &cfg
 }
 
+// runDependencyCheck checks all dependencies and prints detailed status
+func runDependencyCheck() {
+	output.Step("Checking system dependencies...")
+
+	allFound := true
+
+	// Required tools
+	requiredTools := []struct {
+		name string
+		pkg  string
+		cmds []string
+	}{
+		{"wipefs", "util-linux", []string{"wipefs"}},
+		{"parted", "parted", []string{"parted"}},
+		{"lsblk", "util-linux", []string{"lsblk"}},
+		{"blockdev", "util-linux", []string{"blockdev"}},
+		{"mount", "util-linux", []string{"mount"}},
+		{"umount", "util-linux", []string{"umount"}},
+		{"7z", "p7zip-full / p7zip", []string{"7z"}},
+		{"mkdosfs", "dosfstools", []string{"mkdosfs", "mkfs.vfat", "mkfs.fat"}},
+		{"wimlib-imagex", "wimlib / wimtools", []string{"wimlib-imagex"}},
+	}
+
+	for _, tool := range requiredTools {
+		found := false
+		var foundPath string
+		for _, cmd := range tool.cmds {
+			if path, err := exec.LookPath(cmd); err == nil {
+				found = true
+				foundPath = path
+				break
+			}
+		}
+		if found {
+			output.Info("%s: found at %s", tool.name, foundPath)
+		} else {
+			output.Error("%s: NOT FOUND (install package: %s)", tool.name, tool.pkg)
+			allFound = false
+		}
+	}
+
+	// Optional tools
+	optionalTools := []struct {
+		name    string
+		pkg     string
+		cmds    []string
+		purpose string
+	}{
+		{"grub-install", "grub2 / grub-pc", []string{"grub-install", "grub2-install"}, "legacy BIOS boot"},
+		{"mkntfs", "ntfs-3g / ntfsprogs", []string{"mkntfs"}, "NTFS filesystem support"},
+	}
+
+	output.Step("Checking optional dependencies...")
+	for _, tool := range optionalTools {
+		found := false
+		var foundPath string
+		for _, cmd := range tool.cmds {
+			if path, err := exec.LookPath(cmd); err == nil {
+				found = true
+				foundPath = path
+				break
+			}
+		}
+		if found {
+			output.Info("%s: found at %s", tool.name, foundPath)
+		} else {
+			output.Warning("%s: not found (needed for %s, install: %s)", tool.name, tool.purpose, tool.pkg)
+		}
+	}
+
+	fmt.Println()
+	if allFound {
+		output.Success("All required dependencies are installed!")
+		os.Exit(0)
+	} else {
+		output.Error("Some required dependencies are missing. Please install them before using woeusb-go.")
+		os.Exit(1)
+	}
+}
+
 func getMode(cfg *config) string {
 	if cfg.device {
 		return "device"
@@ -161,6 +250,10 @@ func getMode(cfg *config) string {
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: woeusb-go [--device | --partition] [options] <source> <target>\n\n")
 	fmt.Fprintf(os.Stderr, "Create a bootable Windows USB drive from an ISO or DVD.\n\n")
+	fmt.Fprintf(os.Stderr, "Examples:\n")
+	fmt.Fprintf(os.Stderr, "  woeusb-go --device /path/to/windows.iso /dev/sdX\n")
+	fmt.Fprintf(os.Stderr, "  woeusb-go --partition /path/to/windows.iso /dev/sdX1\n")
+	fmt.Fprintf(os.Stderr, "  woeusb-go --check-deps\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
 	flag.PrintDefaults()
 }
