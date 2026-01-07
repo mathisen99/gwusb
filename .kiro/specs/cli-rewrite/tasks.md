@@ -61,11 +61,11 @@
 - **Relates to:** AC-6
 
 ## Task 11: File Copying with Progress
-- [ ] Implement `CopyWithProgress(srcMount, dstMount, progressFn)`
-- [ ] Walk source directory, create dirs, copy files
-- [ ] Large files (>5MB) copied in chunks for progress updates
-- [ ] Call `progressFn` with bytes copied, total, current file
-- [ ] Print progress to stderr
+- [x] Implement `CopyWithProgress(srcMount, dstMount, progressFn)`
+- [x] Walk source directory, create dirs, copy files
+- [x] Large files (>5MB) copied in chunks for progress updates
+- [x] Call `progressFn` with bytes copied, total, current file
+- [x] Print progress to stderr
 - **Relates to:** AC-7
 
 ## Task 12: GRUB Bootloader
