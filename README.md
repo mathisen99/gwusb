@@ -16,4 +16,3 @@ A Go rewrite of [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng) — a Linux too
 ## Documentation
 
 See [MY_UNDERSTANDING.md](MY_UNDERSTANDING.md) for a complete technical analysis of the original project.
-# gwusb
