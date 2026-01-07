@@ -3,16 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/mathisen/woeusb-go/internal/bootloader"
-	"github.com/mathisen/woeusb-go/internal/copy"
+	filecopy "github.com/mathisen/woeusb-go/internal/copy"
 	"github.com/mathisen/woeusb-go/internal/deps"
 	"github.com/mathisen/woeusb-go/internal/filesystem"
 	"github.com/mathisen/woeusb-go/internal/mount"
+	"github.com/mathisen/woeusb-go/internal/output"
 	"github.com/mathisen/woeusb-go/internal/partition"
 	"github.com/mathisen/woeusb-go/internal/session"
 	"github.com/mathisen/woeusb-go/internal/validation"
@@ -39,6 +39,10 @@ func main() {
 		return
 	}
 
+	// Setup output options
+	output.SetNoColor(cfg.noColor)
+	output.SetVerbose(cfg.verbose)
+
 	// Setup session for cleanup
 	sess := &session.Session{
 		Source:      cfg.source,
@@ -56,28 +60,43 @@ func main() {
 	sess.SetupSignalHandler()
 	defer func() { _ = sess.Cleanup() }()
 
+	// Print header
+	output.Step("WoeUSB-go v%s", version)
+	output.Verbose("Source: %s", cfg.source)
+	output.Verbose("Target: %s", cfg.target)
+	output.Verbose("Filesystem: %s, Label: %s", cfg.filesystem, cfg.label)
+
 	// Check dependencies
+	output.Step("Checking dependencies...")
 	if err := checkDependencies(); err != nil {
-		log.Fatalf("Dependency check failed: %v", err)
+		output.Error("Dependency check failed: %v", err)
+		os.Exit(1)
 	}
+	output.Info("All dependencies found")
 
 	// Validate source and target
+	output.Step("Validating source and target...")
 	if err := validateInputs(cfg); err != nil {
-		log.Fatalf("Validation failed: %v", err)
+		output.Error("Validation failed: %v", err)
+		os.Exit(1)
 	}
+	output.Info("Validation passed")
 
 	// Execute the appropriate mode
+	var err error
 	if cfg.device {
-		if err := executeDeviceMode(cfg, sess); err != nil {
-			log.Fatalf("Device mode failed: %v", err)
-		}
+		err = executeDeviceMode(cfg, sess)
 	} else {
-		if err := executePartitionMode(cfg, sess); err != nil {
-			log.Fatalf("Partition mode failed: %v", err)
-		}
+		err = executePartitionMode(cfg, sess)
 	}
 
-	fmt.Println("✓ WoeUSB operation completed successfully!")
+	if err != nil {
+		output.Error("%v", err)
+		os.Exit(1)
+	}
+
+	output.Success("WoeUSB operation completed successfully!")
+	output.Info("You may now safely remove the USB device")
 }
 
 func parseArgs() *config {
@@ -152,17 +171,14 @@ func checkDependencies() error {
 }
 
 func validateInputs(cfg *config) error {
-	// Validate source
 	if err := validation.ValidateSource(cfg.source); err != nil {
 		return fmt.Errorf("source validation failed: %v", err)
 	}
 
-	// Validate target
 	if err := validation.ValidateTarget(cfg.target, getMode(cfg)); err != nil {
 		return fmt.Errorf("target validation failed: %v", err)
 	}
 
-	// Check if target is busy
 	if err := mount.CheckNotBusy(cfg.target); err != nil {
 		return fmt.Errorf("target busy check failed: %v", err)
 	}
@@ -171,121 +187,164 @@ func validateInputs(cfg *config) error {
 }
 
 func executeDeviceMode(cfg *config, sess *session.Session) error {
-	fmt.Printf("Starting device mode: %s -> %s\n", cfg.source, cfg.target)
-
-	// Mount source
+	output.Step("Mounting source ISO...")
 	srcMount, err := mountSource(cfg.source)
 	if err != nil {
 		return fmt.Errorf("failed to mount source: %v", err)
 	}
-	defer func() { _ = mount.CleanupMountpoint(srcMount) }()
+	sess.SourceMount = srcMount
+	output.Info("Source mounted at %s", srcMount)
 
-	// Always use FAT32 for maximum UEFI compatibility
-	// Large WIM files will be split automatically
-	cfg.filesystem = "FAT"
+	// Default to FAT if not specified
+	if cfg.filesystem == "" {
+		cfg.filesystem = "FAT"
+	}
 
-	// Create bootable FAT32 partition
+	output.Step("Wiping device %s...", cfg.target)
+	output.Notice("This will destroy ALL data on the device!")
 	if err := partition.CreateBootablePartition(cfg.target, cfg.filesystem); err != nil {
 		return fmt.Errorf("failed to create bootable partition: %v", err)
 	}
-	mainPartition := partition.GetPartitionPath(cfg.target)
+	output.Info("Partition table created")
 
-	// Format the partition as FAT32
+	mainPartition := partition.GetPartitionPath(cfg.target)
+	output.Verbose("Main partition: %s", mainPartition)
+
+	output.Step("Formatting partition as %s...", cfg.filesystem)
 	if err := filesystem.FormatPartition(mainPartition, cfg.filesystem, cfg.label); err != nil {
 		return fmt.Errorf("failed to format partition: %v", err)
 	}
+	output.Info("Partition formatted with label '%s'", cfg.label)
 
-	// Mount target partition
-	dstMount, err := mount.MountDevice(mainPartition, "vfat")
+	output.Step("Mounting target partition...")
+	fsType := "vfat"
+	if cfg.filesystem == "NTFS" {
+		fsType = "ntfs-3g"
+	}
+	dstMount, err := mount.MountDevice(mainPartition, fsType)
 	if err != nil {
 		return fmt.Errorf("failed to mount target partition: %v", err)
 	}
-	defer func() { _ = mount.CleanupMountpoint(dstMount) }()
+	sess.TargetMount = dstMount
+	output.Info("Target mounted at %s", dstMount)
 
-	// Copy files with automatic WIM splitting for files > 4GB
-	fmt.Println("Copying Windows files...")
-	if err := copy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, copy.PrintProgress); err != nil {
+	output.Step("Copying Windows files...")
+	output.Notice("This may take a while depending on USB speed. Do not interrupt!")
+	if err := filecopy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, filecopy.PrintProgress); err != nil {
 		return fmt.Errorf("failed to copy files: %v", err)
 	}
+	output.Info("All files copied successfully")
 
-	// Set boot flag if requested (helps with some buggy BIOSes)
 	if cfg.biosBootFlag {
+		output.Step("Setting boot flag for BIOS compatibility...")
 		if err := partition.SetBootFlag(cfg.target, 1); err != nil {
 			return fmt.Errorf("failed to set boot flag: %v", err)
 		}
+		output.Info("Boot flag set")
 	}
 
-	// Install GRUB for legacy BIOS support if not skipped
 	if !cfg.skipGrub {
+		output.Step("Installing GRUB bootloader for legacy BIOS support...")
 		dependencies, _ := deps.CheckDependencies()
 		if dependencies.GrubCmd != "" {
 			if err := bootloader.InstallGRUBWithConfig(dstMount, cfg.target, dependencies.GrubCmd); err != nil {
-				// GRUB failure is non-fatal for UEFI-only systems
-				fmt.Printf("Warning: GRUB installation failed (UEFI boot will still work): %v\n", err)
+				output.Warning("GRUB installation failed (UEFI boot will still work): %v", err)
+			} else {
+				output.Info("GRUB installed successfully")
 			}
+		} else {
+			output.Warning("GRUB not found, skipping legacy BIOS boot support")
 		}
+	} else {
+		output.Verbose("Skipping GRUB installation as requested")
 	}
+
+	output.Step("Cleaning up...")
+	if err := mount.CleanupMountpoint(dstMount); err != nil {
+		output.Warning("Failed to unmount target: %v", err)
+	}
+	if err := mount.CleanupMountpoint(srcMount); err != nil {
+		output.Warning("Failed to unmount source: %v", err)
+	}
+	sess.SourceMount = ""
+	sess.TargetMount = ""
+	output.Info("Cleanup complete")
 
 	return nil
 }
 
 func executePartitionMode(cfg *config, sess *session.Session) error {
-	fmt.Printf("Starting partition mode: %s -> %s\n", cfg.source, cfg.target)
-
-	// Mount source
+	output.Step("Mounting source ISO...")
 	srcMount, err := mountSource(cfg.source)
 	if err != nil {
 		return fmt.Errorf("failed to mount source: %v", err)
 	}
-	defer func() { _ = mount.CleanupMountpoint(srcMount) }()
+	sess.SourceMount = srcMount
+	output.Info("Source mounted at %s", srcMount)
 
-	// Always use FAT32 for maximum compatibility
-	cfg.filesystem = "FAT"
+	// Default to FAT if not specified
+	if cfg.filesystem == "" {
+		cfg.filesystem = "FAT"
+	}
 
-	// Format the partition as FAT32
+	output.Step("Formatting partition %s as %s...", cfg.target, cfg.filesystem)
+	output.Notice("This will destroy all data on the partition!")
 	if err := filesystem.FormatPartition(cfg.target, cfg.filesystem, cfg.label); err != nil {
 		return fmt.Errorf("failed to format partition: %v", err)
 	}
+	output.Info("Partition formatted with label '%s'", cfg.label)
 
-	// Mount target partition
-	dstMount, err := mount.MountDevice(cfg.target, "vfat")
+	output.Step("Mounting target partition...")
+	fsType := "vfat"
+	if cfg.filesystem == "NTFS" {
+		fsType = "ntfs-3g"
+	}
+	dstMount, err := mount.MountDevice(cfg.target, fsType)
 	if err != nil {
 		return fmt.Errorf("failed to mount target partition: %v", err)
 	}
-	defer func() { _ = mount.CleanupMountpoint(dstMount) }()
+	sess.TargetMount = dstMount
+	output.Info("Target mounted at %s", dstMount)
 
-	// Copy files with automatic WIM splitting
-	fmt.Println("Copying Windows files...")
-	if err := copy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, copy.PrintProgress); err != nil {
+	output.Step("Copying Windows files...")
+	output.Notice("This may take a while depending on USB speed. Do not interrupt!")
+	if err := filecopy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, filecopy.PrintProgress); err != nil {
 		return fmt.Errorf("failed to copy files: %v", err)
 	}
+	output.Info("All files copied successfully")
+
+	output.Step("Cleaning up...")
+	if err := mount.CleanupMountpoint(dstMount); err != nil {
+		output.Warning("Failed to unmount target: %v", err)
+	}
+	if err := mount.CleanupMountpoint(srcMount); err != nil {
+		output.Warning("Failed to unmount source: %v", err)
+	}
+	sess.SourceMount = ""
+	sess.TargetMount = ""
+	output.Info("Cleanup complete")
 
 	return nil
 }
 
 func mountSource(source string) (string, error) {
-	// Check if source is an ISO file or block device
 	info, err := os.Stat(source)
 	if err != nil {
 		return "", err
 	}
 
 	if info.Mode().IsRegular() {
-		// ISO file
 		return mount.MountISO(source)
-	} else {
-		// Block device - detect filesystem
-		return mount.MountDevice(source, "auto")
 	}
+	return mount.MountDevice(source, "auto")
 }
 
 func init() {
-	// Setup signal handling for graceful shutdown
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		fmt.Println("\nReceived interrupt signal, cleaning up...")
+		output.Warning("Received interrupt signal, cleaning up...")
 		os.Exit(1)
 	}()
 }
