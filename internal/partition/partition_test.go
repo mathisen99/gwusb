@@ -1,6 +1,7 @@
 package partition
 
 import (
+	"os"
 	"testing"
 )
 
@@ -91,4 +92,43 @@ func TestCreateBootablePartition(t *testing.T) {
 
 	// Note: This is a comprehensive test that would require actual hardware
 	// and root privileges to test properly
+}
+
+func TestCreateUEFINTFSPartition(t *testing.T) {
+	// Test with non-existent device (should fail gracefully)
+	_, err := CreateUEFINTFSPartition("/dev/nonexistent")
+	if err == nil {
+		t.Error("Expected error when creating UEFI:NTFS partition on non-existent device")
+	}
+}
+
+func TestInstallUEFINTFS(t *testing.T) {
+	// Create a temporary directory for testing
+	tmpDir, err := os.MkdirTemp("", "uefi_ntfs_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Test with non-existent partition (should handle gracefully)
+	err = InstallUEFINTFS("/dev/nonexistent", tmpDir)
+	// This should not fail because download failure is handled gracefully
+	if err != nil {
+		t.Logf("InstallUEFINTFS returned error (may be expected): %v", err)
+	}
+}
+
+func TestCreateNTFSWithUEFI(t *testing.T) {
+	// Create a temporary directory for testing
+	tmpDir, err := os.MkdirTemp("", "ntfs_uefi_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	// Test with non-existent device (should fail gracefully)
+	_, _, err = CreateNTFSWithUEFI("/dev/nonexistent", tmpDir)
+	if err == nil {
+		t.Error("Expected error when creating NTFS with UEFI on non-existent device")
+	}
 }

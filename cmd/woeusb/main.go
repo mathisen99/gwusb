@@ -241,6 +241,23 @@ func main() {
 			if err != nil {
 				fmt.Printf("✓ Expected error for missing UEFI bootloader: %v\n", err)
 			}
+
+			// Test UEFI:NTFS functionality
+			fmt.Println("\nTesting UEFI:NTFS functions:")
+
+			// Test UEFI:NTFS partition creation (will fail for non-existent device)
+			_, err = partition.CreateUEFINTFSPartition("/dev/nonexistent")
+			if err != nil {
+				fmt.Printf("✓ Expected error for UEFI:NTFS partition creation: %v\n", err)
+			}
+
+			// Test UEFI:NTFS installation
+			err = partition.InstallUEFINTFS("/dev/nonexistent", tmpBootDir)
+			if err != nil {
+				fmt.Printf("UEFI:NTFS installation failed: %v\n", err)
+			} else {
+				fmt.Println("✓ UEFI:NTFS installation handled gracefully")
+			}
 		}
 	}
 }

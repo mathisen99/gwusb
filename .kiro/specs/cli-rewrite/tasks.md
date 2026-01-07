@@ -81,9 +81,9 @@
 - **Relates to:** AC-9
 
 ## Task 14: UEFI:NTFS Partition (NTFS Mode)
-- [ ] Implement `CreateUEFINTFSPartition(device)` — create 512KB partition at end
-- [ ] Implement `InstallUEFINTFS(partition, tempDir)` — download uefi-ntfs.img, write to partition
-- [ ] Handle download failure gracefully (warning, not error)
+- [x] Implement `CreateUEFINTFSPartition(device)` — create 512KB partition at end
+- [x] Implement `InstallUEFINTFS(partition, tempDir)` — download uefi-ntfs.img, write to partition
+- [x] Handle download failure gracefully (warning, not error)
 - **Relates to:** AC-6
 
 ## Task 15: Boot Flag Workaround

@@ -2,10 +2,138 @@ package partition
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+// CreateUEFINTFSPartition creates a 512KB partition at the end of the device for UEFI:NTFS
+func CreateUEFINTFSPartition(device string) (string, error) {
+	// Create a small partition at the end of the device
+	cmd := exec.Command("parted", "-s", device, "mkpart", "primary", "fat32", "-512KiB", "100%")
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to create UEFI:NTFS partition on %s: %v", device, err)
+	}
+
+	// Re-read partition table
+	if err := RereadPartitionTable(device); err != nil {
+		return "", fmt.Errorf("failed to re-read partition table: %v", err)
+	}
+
+	// Return the partition path (should be partition 2 for UEFI:NTFS)
+	var partitionPath string
+	if strings.Contains(device, "nvme") || strings.Contains(device, "mmcblk") {
+		partitionPath = device + "p2"
+	} else {
+		partitionPath = device + "2"
+	}
+
+	return partitionPath, nil
+}
+
+// InstallUEFINTFS downloads uefi-ntfs.img and writes it to the partition
+func InstallUEFINTFS(partition, tempDir string) error {
+	// UEFI:NTFS image URL (official release)
+	imageURL := "https://github.com/pbatard/uefi-ntfs/releases/download/v1.4/uefi-ntfs.img"
+
+	// Download the image to temp directory
+	imagePath := filepath.Join(tempDir, "uefi-ntfs.img")
+	if err := downloadFile(imageURL, imagePath); err != nil {
+		// Handle download failure gracefully (warning, not error)
+		fmt.Fprintf(os.Stderr, "Warning: Failed to download UEFI:NTFS image: %v\n", err)
+		fmt.Fprintf(os.Stderr, "UEFI booting may not work properly for NTFS partitions\n")
+		return nil // Return nil to continue without failing
+	}
+
+	// Write the image to the partition
+	if err := writeImageToPartition(imagePath, partition); err != nil {
+		return fmt.Errorf("failed to write UEFI:NTFS image to partition %s: %v", partition, err)
+	}
+
+	// Clean up downloaded image
+	_ = os.Remove(imagePath)
+
+	return nil
+}
+
+// downloadFile downloads a file from URL to the specified path
+func downloadFile(url, filepath string) error {
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download from %s: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status: %s", resp.Status)
+	}
+
+	// Create the file
+	out, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %v", filepath, err)
+	}
+	defer func() { _ = out.Close() }()
+
+	// Copy data
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to write downloaded data: %v", err)
+	}
+
+	return nil
+}
+
+// writeImageToPartition writes an image file to a partition using dd
+func writeImageToPartition(imagePath, partition string) error {
+	cmd := exec.Command("dd", "if="+imagePath, "of="+partition, "bs=1M", "status=progress")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to write image with dd: %v", err)
+	}
+	return nil
+}
+
+// CreateNTFSWithUEFI creates an NTFS partition setup with UEFI:NTFS support
+func CreateNTFSWithUEFI(device, tempDir string) (string, string, error) {
+	// Wipe the device first
+	if err := Wipe(device); err != nil {
+		return "", "", fmt.Errorf("failed to wipe device: %v", err)
+	}
+
+	// Create MBR partition table
+	if err := CreateMBRTable(device); err != nil {
+		return "", "", fmt.Errorf("failed to create MBR table: %v", err)
+	}
+
+	// Create the main NTFS partition (leaving space for UEFI:NTFS)
+	if err := CreatePartition(device, "NTFS"); err != nil {
+		return "", "", fmt.Errorf("failed to create main partition: %v", err)
+	}
+
+	// Create UEFI:NTFS partition
+	uefiPartition, err := CreateUEFINTFSPartition(device)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create UEFI:NTFS partition: %v", err)
+	}
+
+	// Install UEFI:NTFS
+	if err := InstallUEFINTFS(uefiPartition, tempDir); err != nil {
+		return "", "", fmt.Errorf("failed to install UEFI:NTFS: %v", err)
+	}
+
+	// Return main partition path
+	mainPartition := GetPartitionPath(device)
+	return mainPartition, uefiPartition, nil
+}
 
 // Wipe removes all filesystem signatures and partition table from a device
 func Wipe(device string) error {
