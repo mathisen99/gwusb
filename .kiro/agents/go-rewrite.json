@@ -1,0 +1,18 @@
+{
+  "name": "go-rewrite",
+  "description": "Go rewrite agent with automatic formatting + vet + lint hooks",
+  "tools": ["@builtin"],
+  "hooks": {
+    "postToolUse": [
+      {
+        "matcher": "write",
+        "command": "go fmt ./... && go vet ./... && (command -v golangci-lint >/dev/null 2>&1 && golangci-lint run ./... || (echo 'ERROR: golangci-lint not installed' 1>&2; exit 1))"
+      }
+    ],
+    "stop": [
+      {
+        "command": "go fmt ./... && go vet ./... && (command -v golangci-lint >/dev/null 2>&1 && golangci-lint run ./... || (echo 'ERROR: golangci-lint not installed' 1>&2; exit 1))"
+      }
+    ]
+  }
+}
