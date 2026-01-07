@@ -54,8 +54,8 @@ func TestWriteGRUBConfig(t *testing.T) {
 	}
 
 	contentStr := string(content)
-	if !strings.Contains(contentStr, "menuentry \"Windows\"") {
-		t.Error("grub.cfg does not contain expected Windows menu entry")
+	if !strings.Contains(contentStr, "ntldr /bootmgr") {
+		t.Error("grub.cfg does not contain expected ntldr command")
 	}
 
 	// Test with grub2 prefix
