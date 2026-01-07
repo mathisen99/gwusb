@@ -1,12 +1,129 @@
 package bootloader
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// IsWindows7 checks if the source contains Windows 7 by examining cversion.ini
+func IsWindows7(srcMount string) (bool, error) {
+	cversionPath := filepath.Join(srcMount, "sources", "cversion.ini")
+
+	file, err := os.Open(cversionPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // File doesn't exist, not Windows 7
+		}
+		return false, fmt.Errorf("failed to open cversion.ini: %v", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "MinServer=") {
+			version := strings.TrimPrefix(line, "MinServer=")
+			// Windows 7 versions start with 7
+			if strings.HasPrefix(version, "7") {
+				return true, nil
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("error reading cversion.ini: %v", err)
+	}
+
+	return false, nil
+}
+
+// ExtractBootloader extracts bootmgfw.efi from Windows 7 sources using 7z
+func ExtractBootloader(srcMount, dstMount string) error {
+	// Look for install.wim or install.esd in sources directory
+	sourcesDir := filepath.Join(srcMount, "sources")
+	var installFile string
+
+	// Check for install.wim first, then install.esd
+	wimPath := filepath.Join(sourcesDir, "install.wim")
+	esdPath := filepath.Join(sourcesDir, "install.esd")
+
+	if _, err := os.Stat(wimPath); err == nil {
+		installFile = wimPath
+	} else if _, err := os.Stat(esdPath); err == nil {
+		installFile = esdPath
+	} else {
+		return fmt.Errorf("neither install.wim nor install.esd found in sources directory")
+	}
+
+	// Create EFI boot directory
+	efiBootDir := filepath.Join(dstMount, "efi", "boot")
+	if err := os.MkdirAll(efiBootDir, 0755); err != nil {
+		return fmt.Errorf("failed to create EFI boot directory: %v", err)
+	}
+
+	// Extract bootmgfw.efi using 7z
+	bootloaderPath := filepath.Join(efiBootDir, "bootx64.efi")
+
+	// Use 7z to extract bootmgfw.efi from the install file
+	// The path in the WIM/ESD is typically: 1/Windows/Boot/EFI/bootmgfw.efi
+	cmd := exec.Command("7z", "e", "-so", installFile, "1/Windows/Boot/EFI/bootmgfw.efi")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to extract bootmgfw.efi with 7z: %v", err)
+	}
+
+	// Write the extracted bootloader to bootx64.efi
+	if err := os.WriteFile(bootloaderPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write bootx64.efi: %v", err)
+	}
+
+	return nil
+}
+
+// ApplyWindows7UEFIWorkaround applies the complete Windows 7 UEFI workaround
+func ApplyWindows7UEFIWorkaround(srcMount, dstMount string) error {
+	// First check if this is Windows 7
+	isWin7, err := IsWindows7(srcMount)
+	if err != nil {
+		return fmt.Errorf("failed to check Windows version: %v", err)
+	}
+
+	if !isWin7 {
+		return nil // Not Windows 7, no workaround needed
+	}
+
+	// Extract and place the bootloader
+	if err := ExtractBootloader(srcMount, dstMount); err != nil {
+		return fmt.Errorf("failed to extract bootloader: %v", err)
+	}
+
+	return nil
+}
+
+// CheckUEFIBootloader verifies that the UEFI bootloader is properly installed
+func CheckUEFIBootloader(dstMount string) error {
+	bootloaderPath := filepath.Join(dstMount, "efi", "boot", "bootx64.efi")
+
+	info, err := os.Stat(bootloaderPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("UEFI bootloader not found at %s", bootloaderPath)
+		}
+		return fmt.Errorf("failed to check UEFI bootloader: %v", err)
+	}
+
+	// Check that the file is not empty
+	if info.Size() == 0 {
+		return fmt.Errorf("UEFI bootloader file is empty: %s", bootloaderPath)
+	}
+
+	return nil
+}
 
 // InstallGRUB installs GRUB bootloader to the specified device
 func InstallGRUB(mountpoint, device, grubCmd string) error {
