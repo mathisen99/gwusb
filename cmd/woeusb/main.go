@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/mathisen/woeusb-go/internal/bootloader"
@@ -181,76 +180,49 @@ func executeDeviceMode(cfg *config, sess *session.Session) error {
 	}
 	defer func() { _ = mount.CleanupMountpoint(srcMount) }()
 
-	// Determine filesystem based on content
-	suggestedFS, reason, err := filesystem.SuggestFilesystem(srcMount)
-	if err != nil {
-		return fmt.Errorf("failed to analyze source content: %v", err)
+	// Always use FAT32 for maximum UEFI compatibility
+	// Large WIM files will be split automatically
+	cfg.filesystem = "FAT"
+
+	// Create bootable FAT32 partition
+	if err := partition.CreateBootablePartition(cfg.target, cfg.filesystem); err != nil {
+		return fmt.Errorf("failed to create bootable partition: %v", err)
 	}
+	mainPartition := partition.GetPartitionPath(cfg.target)
 
-	if cfg.filesystem == "FAT" && suggestedFS == "NTFS" {
-		fmt.Printf("Warning: %s\n", reason)
-		fmt.Println("Switching to NTFS filesystem")
-		cfg.filesystem = "NTFS"
-	}
-
-	// Create partitions and format
-	var mainPartition string
-	if cfg.filesystem == "NTFS" {
-		// Create NTFS with UEFI support
-		tempDir, err := os.MkdirTemp("", "woeusb-")
-		if err != nil {
-			return fmt.Errorf("failed to create temp directory: %v", err)
-		}
-		defer func() { _ = os.RemoveAll(tempDir) }()
-
-		mainPartition, _, err = partition.CreateNTFSWithUEFI(cfg.target, tempDir)
-		if err != nil {
-			return fmt.Errorf("failed to create NTFS with UEFI: %v", err)
-		}
-	} else {
-		// Create regular bootable partition
-		if err := partition.CreateBootablePartition(cfg.target, cfg.filesystem); err != nil {
-			return fmt.Errorf("failed to create bootable partition: %v", err)
-		}
-		mainPartition = partition.GetPartitionPath(cfg.target)
-	}
-
-	// Format the main partition
+	// Format the partition as FAT32
 	if err := filesystem.FormatPartition(mainPartition, cfg.filesystem, cfg.label); err != nil {
 		return fmt.Errorf("failed to format partition: %v", err)
 	}
 
 	// Mount target partition
-	dstMount, err := mount.MountDevice(mainPartition, strings.ToLower(cfg.filesystem))
+	dstMount, err := mount.MountDevice(mainPartition, "vfat")
 	if err != nil {
 		return fmt.Errorf("failed to mount target partition: %v", err)
 	}
 	defer func() { _ = mount.CleanupMountpoint(dstMount) }()
 
-	// Copy files
-	fmt.Println("Copying files...")
-	if err := copy.CopyWithProgress(srcMount, dstMount, copy.PrintProgress); err != nil {
+	// Copy files with automatic WIM splitting for files > 4GB
+	fmt.Println("Copying Windows files...")
+	if err := copy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, copy.PrintProgress); err != nil {
 		return fmt.Errorf("failed to copy files: %v", err)
 	}
-	fmt.Println() // New line after progress
 
-	// Apply Windows 7 UEFI workaround if needed
-	if err := bootloader.ApplyWindows7UEFIWorkaround(srcMount, dstMount); err != nil {
-		return fmt.Errorf("failed to apply Windows 7 UEFI workaround: %v", err)
-	}
-
-	// Install GRUB if not skipped
-	if !cfg.skipGrub {
-		dependencies, _ := deps.CheckDependencies()
-		if err := bootloader.InstallGRUBWithConfig(dstMount, cfg.target, dependencies.GrubCmd); err != nil {
-			return fmt.Errorf("failed to install GRUB: %v", err)
-		}
-	}
-
-	// Set boot flag if requested
+	// Set boot flag if requested (helps with some buggy BIOSes)
 	if cfg.biosBootFlag {
 		if err := partition.SetBootFlag(cfg.target, 1); err != nil {
 			return fmt.Errorf("failed to set boot flag: %v", err)
+		}
+	}
+
+	// Install GRUB for legacy BIOS support if not skipped
+	if !cfg.skipGrub {
+		dependencies, _ := deps.CheckDependencies()
+		if dependencies.GrubCmd != "" {
+			if err := bootloader.InstallGRUBWithConfig(dstMount, cfg.target, dependencies.GrubCmd); err != nil {
+				// GRUB failure is non-fatal for UEFI-only systems
+				fmt.Printf("Warning: GRUB installation failed (UEFI boot will still work): %v\n", err)
+			}
 		}
 	}
 
@@ -267,33 +239,25 @@ func executePartitionMode(cfg *config, sess *session.Session) error {
 	}
 	defer func() { _ = mount.CleanupMountpoint(srcMount) }()
 
-	// Validate filesystem choice
-	if err := filesystem.ValidateFilesystemChoice(srcMount, cfg.filesystem); err != nil {
-		return fmt.Errorf("filesystem validation failed: %v", err)
-	}
+	// Always use FAT32 for maximum compatibility
+	cfg.filesystem = "FAT"
 
-	// Format the partition
+	// Format the partition as FAT32
 	if err := filesystem.FormatPartition(cfg.target, cfg.filesystem, cfg.label); err != nil {
 		return fmt.Errorf("failed to format partition: %v", err)
 	}
 
 	// Mount target partition
-	dstMount, err := mount.MountDevice(cfg.target, strings.ToLower(cfg.filesystem))
+	dstMount, err := mount.MountDevice(cfg.target, "vfat")
 	if err != nil {
 		return fmt.Errorf("failed to mount target partition: %v", err)
 	}
 	defer func() { _ = mount.CleanupMountpoint(dstMount) }()
 
-	// Copy files
-	fmt.Println("Copying files...")
-	if err := copy.CopyWithProgress(srcMount, dstMount, copy.PrintProgress); err != nil {
+	// Copy files with automatic WIM splitting
+	fmt.Println("Copying Windows files...")
+	if err := copy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, copy.PrintProgress); err != nil {
 		return fmt.Errorf("failed to copy files: %v", err)
-	}
-	fmt.Println() // New line after progress
-
-	// Apply Windows 7 UEFI workaround if needed
-	if err := bootloader.ApplyWindows7UEFIWorkaround(srcMount, dstMount); err != nil {
-		return fmt.Errorf("failed to apply Windows 7 UEFI workaround: %v", err)
 	}
 
 	return nil

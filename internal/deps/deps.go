@@ -7,16 +7,17 @@ import (
 )
 
 type Dependencies struct {
-	Wipefs   string
-	Parted   string
-	Lsblk    string
-	Blockdev string
-	Mount    string
-	Umount   string
-	SevenZip string
-	MkFat    string
-	MkNTFS   string
-	GrubCmd  string
+	Wipefs      string
+	Parted      string
+	Lsblk       string
+	Blockdev    string
+	Mount       string
+	Umount      string
+	SevenZip    string
+	MkFat       string
+	MkNTFS      string
+	GrubCmd     string
+	WimlibSplit string // wimlib-imagex for splitting WIM files
 }
 
 func CheckDependencies() (*Dependencies, error) {
@@ -54,14 +55,12 @@ func CheckDependencies() (*Dependencies, error) {
 		missing = append(missing, "mkdosfs/mkfs.vfat/mkfs.fat")
 	}
 
-	// Find mkntfs
-	if path, err := exec.LookPath("mkntfs"); err != nil {
-		missing = append(missing, "mkntfs")
-	} else {
+	// Find mkntfs (optional - only needed if user forces NTFS)
+	if path, err := exec.LookPath("mkntfs"); err == nil {
 		deps.MkNTFS = path
 	}
 
-	// Find grub-install or grub2-install
+	// Find grub-install or grub2-install (optional for UEFI-only systems)
 	grubCmds := []string{"grub-install", "grub2-install"}
 	for _, cmd := range grubCmds {
 		if path, err := exec.LookPath(cmd); err == nil {
@@ -69,8 +68,12 @@ func CheckDependencies() (*Dependencies, error) {
 			break
 		}
 	}
-	if deps.GrubCmd == "" {
-		missing = append(missing, "grub-install/grub2-install")
+
+	// Find wimlib-imagex for splitting WIM files (required for Win10/11)
+	if path, err := exec.LookPath("wimlib-imagex"); err != nil {
+		missing = append(missing, "wimlib-imagex (install wimlib package)")
+	} else {
+		deps.WimlibSplit = path
 	}
 
 	if len(missing) > 0 {
