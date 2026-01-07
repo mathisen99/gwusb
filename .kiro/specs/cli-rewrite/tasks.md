@@ -98,9 +98,9 @@
 - **Relates to:** All ACs
 
 ## Task 17: Testing
-- [ ] Write unit tests for validation functions
-- [ ] Write unit tests for FAT32 limit check
-- [ ] Document manual integration test procedure (requires real USB device)
+- [x] Write unit tests for validation functions
+- [x] Write unit tests for FAT32 limit check
+- [x] Document manual integration test procedure (requires real USB device)
 - **Relates to:** AC-12
 
 ## Task 18: Documentation
