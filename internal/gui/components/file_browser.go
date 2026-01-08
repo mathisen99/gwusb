@@ -83,6 +83,9 @@ func (fb *FileBrowser) OpenDialog(parent fyne.Window) {
 	// Filter for ISO files
 	fd.SetFilter(storage.NewExtensionFileFilter([]string{".iso", ".ISO"}))
 
+	// Set a larger dialog size
+	fd.Resize(fyne.NewSize(800, 600))
+
 	// Start in home directory
 	homeDir, err := os.UserHomeDir()
 	if err == nil {

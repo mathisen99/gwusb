@@ -33,10 +33,15 @@ type BlockDevice struct {
 	Name     string        `json:"name"`
 	Size     string        `json:"size"`
 	Type     string        `json:"type"` // "disk" or "part"
-	Rm       string        `json:"rm"`   // "1" for removable, "0" for non-removable
+	Rm       interface{}   `json:"rm"`   // Can be bool or string depending on lsblk version
 	Tran     string        `json:"tran"` // "usb" for USB devices
 	Model    string        `json:"model"`
 	Children []BlockDevice `json:"children,omitempty"`
+}
+
+// IsRemovable returns true if the device is marked as removable
+func (bd BlockDevice) IsRemovable() bool {
+	return isRemovableValue(bd.Rm)
 }
 
 // excludedTransports lists transport types that should be excluded
@@ -101,7 +106,7 @@ func FilterUSBDevices(devices []BlockDevice) []USBDevice {
 // IsUSBBlockDevice checks if a block device is a removable USB device
 // Returns true if:
 // - type is "disk"
-// - rm (removable) is "1" or "true"
+// - rm (removable) is true/"1"/"true"
 // - tran (transport) is "usb"
 // - tran is NOT in excluded transports (sata, nvme, ata)
 func IsUSBBlockDevice(dev BlockDevice) bool {
@@ -111,7 +116,7 @@ func IsUSBBlockDevice(dev BlockDevice) bool {
 	}
 
 	// Must be removable
-	if !isRemovable(dev.Rm) {
+	if !dev.IsRemovable() {
 		return false
 	}
 
@@ -128,7 +133,24 @@ func IsUSBBlockDevice(dev BlockDevice) bool {
 	return true
 }
 
-// isRemovable checks if the removable field indicates a removable device
+// isRemovableValue checks if the removable field indicates a removable device
+// Handles both string ("1", "true") and bool (true) values
+func isRemovableValue(rm interface{}) bool {
+	if rm == nil {
+		return false
+	}
+	switch v := rm.(type) {
+	case bool:
+		return v
+	case string:
+		v = strings.TrimSpace(v)
+		return v == "1" || strings.ToLower(v) == "true"
+	default:
+		return false
+	}
+}
+
+// isRemovable checks if the removable field indicates a removable device (string version for tests)
 func isRemovable(rm string) bool {
 	rm = strings.TrimSpace(rm)
 	return rm == "1" || strings.ToLower(rm) == "true"
@@ -141,7 +163,7 @@ func BlockDeviceToUSBDevice(dev BlockDevice) USBDevice {
 		Name:      strings.TrimSpace(dev.Model),
 		Size:      parseSizeToBytes(dev.Size),
 		SizeHuman: dev.Size,
-		Removable: isRemovable(dev.Rm),
+		Removable: dev.IsRemovable(),
 		Transport: dev.Tran,
 	}
 }

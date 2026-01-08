@@ -123,18 +123,21 @@ func (pb *ProgressBar) CreateRenderer() fyne.WidgetRenderer {
 // SetProgress updates the progress percentage (0.0 to 1.0)
 func (pb *ProgressBar) SetProgress(value float64) {
 	pb.state.SetProgress(value)
+	// Update UI on main thread
 	pb.bar.SetValue(pb.state.GetProgress())
 }
 
 // SetStatus updates the status text
 func (pb *ProgressBar) SetStatus(status string) {
 	pb.state.SetStatus(status)
+	// Update UI on main thread
 	pb.statusLabel.SetText(status)
 }
 
 // SetProgressAndStatus updates both progress and status atomically
 func (pb *ProgressBar) SetProgressAndStatus(value float64, status string) {
 	pb.state.SetProgressAndStatus(value, status)
+	// Update UI on main thread
 	pb.bar.SetValue(pb.state.GetProgress())
 	pb.statusLabel.SetText(status)
 }
@@ -142,6 +145,7 @@ func (pb *ProgressBar) SetProgressAndStatus(value float64, status string) {
 // Reset resets the progress bar to initial state
 func (pb *ProgressBar) Reset() {
 	pb.state.Reset()
+	// Update UI on main thread
 	pb.bar.SetValue(0)
 	pb.statusLabel.SetText("Ready")
 }
