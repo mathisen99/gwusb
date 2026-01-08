@@ -187,38 +187,59 @@ func (w *MainWindow) onStartClicked() {
 
 // startWriteOperation begins the USB creation process
 func (w *MainWindow) startWriteOperation() {
-	w.SetState(StateInProgress)
-	w.progressBar.Reset()
-
-	go func() {
-		var err error
-
-		// Check if we're running as root
-		if !IsRoot() {
-			// Re-launch the CLI with pkexec for the actual write
-			err = w.executeWithPkexec()
-		} else {
-			err = w.executeDeviceMode()
-		}
-
-		// Update UI on completion (schedule on main thread)
-		time.Sleep(100 * time.Millisecond) // Small delay to ensure UI updates
-
-		if err != nil {
-			w.SetState(StateError)
-			w.updateStatus(fmt.Sprintf("Error: %v", err))
-			w.showError(err.Error())
-		} else {
-			w.SetState(StateComplete)
-			w.updateProgress(1.0, "Complete!")
-			w.showSuccess()
-		}
-	}()
+	// Check if we're running as root
+	if IsRoot() {
+		// Already root, proceed directly
+		w.SetState(StateInProgress)
+		w.progressBar.Reset()
+		go w.runWriteOperation("")
+	} else {
+		// Need to elevate - show password dialog
+		components.ShowPasswordDialogWithInfo(
+			w.window,
+			"WoeUSB-go needs administrator privileges to write to the USB device.",
+			func(result components.PasswordResult) {
+				if result.Cancelled {
+					// User cancelled, don't start operation
+					return
+				}
+				w.SetState(StateInProgress)
+				w.progressBar.Reset()
+				go w.runWriteOperation(result.Password)
+			},
+		)
+	}
 }
 
-// executeWithPkexec runs the CLI tool with elevated privileges via pkexec
-func (w *MainWindow) executeWithPkexec() error {
-	w.updateProgress(0.02, "Requesting administrator privileges...")
+// runWriteOperation executes the write operation (with or without sudo)
+func (w *MainWindow) runWriteOperation(password string) {
+	var err error
+
+	if password != "" {
+		// Run with sudo using the provided password
+		err = w.executeWithSudo(password)
+	} else {
+		// Already root, run directly
+		err = w.executeDeviceMode()
+	}
+
+	// Update UI on completion (schedule on main thread)
+	time.Sleep(100 * time.Millisecond) // Small delay to ensure UI updates
+
+	if err != nil {
+		w.SetState(StateError)
+		w.updateStatus(fmt.Sprintf("Error: %v", err))
+		w.showError(err.Error())
+	} else {
+		w.SetState(StateComplete)
+		w.updateProgress(1.0, "Complete!")
+		w.showSuccess()
+	}
+}
+
+// executeWithSudo runs the CLI tool with elevated privileges via sudo -S
+func (w *MainWindow) executeWithSudo(password string) error {
+	w.updateProgress(0.02, "Authenticating...")
 
 	// Get the path to our own executable
 	executable, err := os.Executable()
@@ -226,8 +247,14 @@ func (w *MainWindow) executeWithPkexec() error {
 		return fmt.Errorf("failed to get executable path: %v", err)
 	}
 
-	// Build the command: pkexec /path/to/woeusb-go --device <iso> <device>
-	cmd := exec.Command("pkexec", executable, "--device", w.selectedISO, w.selectedDevice)
+	// Build the command: sudo -S /path/to/woeusb-go --device <iso> <device>
+	cmd := exec.Command("sudo", "-S", executable, "--device", w.selectedISO, w.selectedDevice)
+
+	// Create pipe for stdin to send password
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdin pipe: %v", err)
+	}
 
 	// Create pipes for stdout/stderr to capture progress
 	stdout, err := cmd.StdoutPipe()
@@ -241,8 +268,15 @@ func (w *MainWindow) executeWithPkexec() error {
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start pkexec: %v", err)
+		return fmt.Errorf("failed to start sudo: %v", err)
 	}
+
+	// Send password to sudo via stdin
+	_, err = stdin.Write([]byte(password + "\n"))
+	if err != nil {
+		return fmt.Errorf("failed to send password: %v", err)
+	}
+	_ = stdin.Close() // Ignore close error
 
 	// Read output in goroutines to update progress
 	go w.readOutput(stdout)
@@ -250,6 +284,12 @@ func (w *MainWindow) executeWithPkexec() error {
 
 	// Wait for completion
 	if err := cmd.Wait(); err != nil {
+		// Check if it's an authentication failure
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 1 {
+				return fmt.Errorf("authentication failed - incorrect password")
+			}
+		}
 		return fmt.Errorf("write operation failed: %v", err)
 	}
 
@@ -296,7 +336,9 @@ func (w *MainWindow) updateProgress(value float64, status string) {
 
 // updateStatus safely updates status label from any goroutine
 func (w *MainWindow) updateStatus(status string) {
-	w.statusLabel.SetText(status)
+	fyne.Do(func() {
+		w.statusLabel.SetText(status)
+	})
 }
 
 // showError displays an error dialog
