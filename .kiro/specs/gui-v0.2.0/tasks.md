@@ -58,13 +58,13 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - **Property 9: Device Display Information**
     - **Validates: Requirements 2.3**
 
-- [ ] 5. Implement dependency checking integration
-  - [ ] 5.1 Update internal/deps/deps.go to use distro package
+- [x] 5. Implement dependency checking integration
+  - [x] 5.1 Update internal/deps/deps.go to use distro package
     - Integrate distro detection
     - Return MissingDep structs with distro-specific package names
     - _Requirements: 1.3, 6.2_
   
-  - [ ] 5.2 Write property test for dependency detection
+  - [x] 5.2 Write property test for dependency detection
     - **Property 3: Dependency Binary Detection**
     - **Validates: Requirements 1.3**
 
