@@ -124,30 +124,38 @@ func (pb *ProgressBar) CreateRenderer() fyne.WidgetRenderer {
 func (pb *ProgressBar) SetProgress(value float64) {
 	pb.state.SetProgress(value)
 	// Update UI on main thread
-	pb.bar.SetValue(pb.state.GetProgress())
+	fyne.Do(func() {
+		pb.bar.SetValue(pb.state.GetProgress())
+	})
 }
 
 // SetStatus updates the status text
 func (pb *ProgressBar) SetStatus(status string) {
 	pb.state.SetStatus(status)
 	// Update UI on main thread
-	pb.statusLabel.SetText(status)
+	fyne.Do(func() {
+		pb.statusLabel.SetText(status)
+	})
 }
 
 // SetProgressAndStatus updates both progress and status atomically
 func (pb *ProgressBar) SetProgressAndStatus(value float64, status string) {
 	pb.state.SetProgressAndStatus(value, status)
 	// Update UI on main thread
-	pb.bar.SetValue(pb.state.GetProgress())
-	pb.statusLabel.SetText(status)
+	fyne.Do(func() {
+		pb.bar.SetValue(pb.state.GetProgress())
+		pb.statusLabel.SetText(status)
+	})
 }
 
 // Reset resets the progress bar to initial state
 func (pb *ProgressBar) Reset() {
 	pb.state.Reset()
 	// Update UI on main thread
-	pb.bar.SetValue(0)
-	pb.statusLabel.SetText("Ready")
+	fyne.Do(func() {
+		pb.bar.SetValue(0)
+		pb.statusLabel.SetText("Ready")
+	})
 }
 
 // GetProgress returns the current progress value
