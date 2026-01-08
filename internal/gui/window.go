@@ -1,12 +1,12 @@
 package gui
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -203,12 +203,43 @@ func (w *MainWindow) startWriteOperation() {
 					// User cancelled, don't start operation
 					return
 				}
+				// Validate password first by running a simple sudo command
 				w.SetState(StateInProgress)
 				w.progressBar.Reset()
-				go w.runWriteOperation(result.Password)
+				w.updateProgress(0.01, "Validating credentials...")
+
+				go func() {
+					// Test sudo credentials
+					if err := w.validateSudoPassword(result.Password); err != nil {
+						w.SetState(StateError)
+						w.updateStatus("Authentication failed")
+						w.showError("Incorrect password. Please try again.")
+						return
+					}
+					// Run the write operation with sudo
+					w.runWriteOperation(result.Password)
+				}()
 			},
 		)
 	}
+}
+
+// validateSudoPassword tests if the password is correct
+func (w *MainWindow) validateSudoPassword(password string) error {
+	cmd := exec.Command("sudo", "-S", "-v")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	_, _ = stdin.Write([]byte(password + "\n"))
+	_ = stdin.Close()
+
+	return cmd.Wait()
 }
 
 // runWriteOperation executes the write operation (with or without sudo)
@@ -216,6 +247,8 @@ func (w *MainWindow) runWriteOperation(password string) {
 	var err error
 
 	if password != "" {
+		// Cache sudo credentials for subsequent commands
+		w.updateProgress(0.02, "Authenticating...")
 		// Run with sudo using the provided password
 		err = w.executeWithSudo(password)
 	} else {
@@ -248,6 +281,7 @@ func (w *MainWindow) executeWithSudo(password string) error {
 	}
 
 	// Build the command: sudo -S /path/to/woeusb-go --device <iso> <device>
+	// Use -n after authentication to prevent further password prompts
 	cmd := exec.Command("sudo", "-S", executable, "--device", w.selectedISO, w.selectedDevice)
 
 	// Create pipe for stdin to send password
@@ -271,18 +305,30 @@ func (w *MainWindow) executeWithSudo(password string) error {
 		return fmt.Errorf("failed to start sudo: %v", err)
 	}
 
-	// Send password to sudo via stdin
+	// Send password to sudo via stdin, then close
 	_, err = stdin.Write([]byte(password + "\n"))
 	if err != nil {
 		return fmt.Errorf("failed to send password: %v", err)
 	}
-	_ = stdin.Close() // Ignore close error
+	_ = stdin.Close()
 
 	// Read output in goroutines to update progress
-	go w.readOutput(stdout)
-	go w.readOutput(stderr)
+	// Use a WaitGroup to ensure we read all output before Wait() returns
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		w.readOutputWithCR(stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		w.readOutputWithCR(stderr)
+	}()
 
-	// Wait for completion
+	// Wait for output readers to finish
+	wg.Wait()
+
+	// Wait for command completion
 	if err := cmd.Wait(); err != nil {
 		// Check if it's an authentication failure
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -296,42 +342,101 @@ func (w *MainWindow) executeWithSudo(password string) error {
 	return nil
 }
 
-// readOutput reads from a pipe and updates progress based on output
-func (w *MainWindow) readOutput(r io.Reader) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Text()
-		// Parse progress from CLI output and update GUI
-		w.parseProgressLine(line)
+// readOutputWithCR reads from a pipe handling both \n and \r as line separators
+func (w *MainWindow) readOutputWithCR(r io.Reader) {
+	buf := make([]byte, 4096)
+	var line strings.Builder
+
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			for i := 0; i < n; i++ {
+				ch := buf[i]
+				if ch == '\n' || ch == '\r' {
+					if line.Len() > 0 {
+						w.parseProgressLine(line.String())
+						line.Reset()
+					}
+				} else {
+					line.WriteByte(ch)
+				}
+			}
+		}
+		if err != nil {
+			// Process any remaining content
+			if line.Len() > 0 {
+				w.parseProgressLine(line.String())
+			}
+			break
+		}
 	}
 }
 
 // parseProgressLine extracts progress info from CLI output
 func (w *MainWindow) parseProgressLine(line string) {
+	// Skip empty lines
+	if strings.TrimSpace(line) == "" {
+		return
+	}
+
+	// Try to parse percentage from "Copying: XX.X%" format
+	if strings.Contains(line, "Copying:") && strings.Contains(line, "%") {
+		// Extract percentage from line like "Copying: 45.2% (1.2 GB) - sources/install.wim"
+		var pct float64
+		if _, err := fmt.Sscanf(line, "Copying: %f%%", &pct); err == nil {
+			// Scale copy progress from 0.25 to 0.85
+			progress := 0.25 + (pct/100.0)*0.60
+			w.updateProgress(progress, line)
+			return
+		}
+	}
+
+	// Try to parse wimlib-imagex split progress
+	if strings.Contains(line, "Writing") && strings.Contains(line, "MiB") {
+		w.updateProgress(0.85, "Splitting WIM file: "+line)
+		return
+	}
+
 	// Map CLI output to progress updates
 	switch {
-	case strings.Contains(line, "Mounting source"):
+	case strings.Contains(line, "Mounting source") || strings.Contains(line, "Mounting ISO"):
 		w.updateProgress(0.05, "Mounting ISO file...")
-	case strings.Contains(line, "Wiping device"):
+	case strings.Contains(line, "Wiping") || strings.Contains(line, "partition table"):
 		w.updateProgress(0.10, "Creating partition table...")
-	case strings.Contains(line, "Formatting partition"):
+	case strings.Contains(line, "Formatting"):
 		w.updateProgress(0.15, "Formatting partition...")
 	case strings.Contains(line, "Mounting target"):
 		w.updateProgress(0.20, "Mounting target partition...")
-	case strings.Contains(line, "Copying"):
-		w.updateProgress(0.50, "Copying Windows files...")
-	case strings.Contains(line, "Installing GRUB"):
+	case strings.Contains(line, "Will split"):
+		w.updateProgress(0.22, line)
+	case strings.Contains(line, "Copying files"):
+		w.updateProgress(0.25, "Copying files...")
+	case strings.Contains(line, "Splitting"):
+		w.updateProgress(0.85, line)
+	case strings.Contains(line, "Split") && strings.Contains(line, "SWM"):
+		w.updateProgress(0.88, line)
+	case strings.Contains(line, "Installing GRUB") || strings.Contains(line, "GRUB"):
 		w.updateProgress(0.90, "Installing bootloader...")
 	case strings.Contains(line, "Cleaning up"):
 		w.updateProgress(0.95, "Cleaning up...")
 	case strings.Contains(line, "completed successfully"):
 		w.updateProgress(1.0, "Complete!")
+	default:
+		// Show any other meaningful output
+		if len(line) > 5 && !strings.HasPrefix(line, "[sudo]") {
+			w.updateProgress(-1, line) // -1 means don't update progress bar, just status
+		}
 	}
 }
 
 // updateProgress safely updates progress from any goroutine
+// If value is -1, only updates status text without changing progress bar
 func (w *MainWindow) updateProgress(value float64, status string) {
-	w.progressBar.SetProgressAndStatus(value, status)
+	if value >= 0 {
+		w.progressBar.SetProgressAndStatus(value, status)
+	} else {
+		w.progressBar.SetStatus(status)
+	}
 }
 
 // updateStatus safely updates status label from any goroutine
