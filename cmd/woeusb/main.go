@@ -12,6 +12,7 @@ import (
 	filecopy "github.com/mathisen/woeusb-go/internal/copy"
 	"github.com/mathisen/woeusb-go/internal/deps"
 	"github.com/mathisen/woeusb-go/internal/filesystem"
+	"github.com/mathisen/woeusb-go/internal/gui"
 	"github.com/mathisen/woeusb-go/internal/mount"
 	"github.com/mathisen/woeusb-go/internal/output"
 	"github.com/mathisen/woeusb-go/internal/partition"
@@ -19,7 +20,7 @@ import (
 	"github.com/mathisen/woeusb-go/internal/validation"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 type config struct {
 	device       bool
@@ -30,6 +31,7 @@ type config struct {
 	skipGrub     bool
 	verbose      bool
 	noColor      bool
+	guiMode      bool
 	source       string
 	target       string
 }
@@ -110,6 +112,7 @@ func parseArgs() *config {
 	flag.BoolVar(&cfg.partition, "partition", false, "Use existing partition")
 	flag.BoolVar(&cfg.partition, "p", false, "Use existing partition (shorthand)")
 	flag.BoolVar(&checkDepsOnly, "check-deps", false, "Check if all required dependencies are installed and exit")
+	flag.BoolVar(&cfg.guiMode, "gui", false, "Launch graphical user interface")
 	flag.StringVar(&cfg.filesystem, "target-filesystem", "FAT", "Target filesystem: FAT or NTFS")
 	flag.StringVar(&cfg.label, "label", "Windows USB", "Filesystem label")
 	flag.StringVar(&cfg.label, "l", "Windows USB", "Filesystem label (shorthand)")
@@ -132,6 +135,12 @@ func parseArgs() *config {
 	// Handle --check-deps flag
 	if checkDepsOnly {
 		runDependencyCheck()
+		return nil
+	}
+
+	// Handle --gui flag
+	if cfg.guiMode {
+		runGUI()
 		return nil
 	}
 
@@ -158,6 +167,16 @@ func parseArgs() *config {
 	cfg.target = args[1]
 
 	return &cfg
+}
+
+// runGUI launches the graphical user interface
+func runGUI() {
+	app := gui.NewApp()
+	if err := app.Run(); err != nil {
+		output.Error("GUI error: %v", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 // runDependencyCheck checks all dependencies and prints detailed status
@@ -248,11 +267,13 @@ func getMode(cfg *config) string {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: woeusb-go [--device | --partition] [options] <source> <target>\n\n")
+	fmt.Fprintf(os.Stderr, "Usage: woeusb-go [--device | --partition] [options] <source> <target>\n")
+	fmt.Fprintf(os.Stderr, "       woeusb-go --gui\n\n")
 	fmt.Fprintf(os.Stderr, "Create a bootable Windows USB drive from an ISO or DVD.\n\n")
 	fmt.Fprintf(os.Stderr, "Examples:\n")
 	fmt.Fprintf(os.Stderr, "  woeusb-go --device /path/to/windows.iso /dev/sdX\n")
 	fmt.Fprintf(os.Stderr, "  woeusb-go --partition /path/to/windows.iso /dev/sdX1\n")
+	fmt.Fprintf(os.Stderr, "  woeusb-go --gui\n")
 	fmt.Fprintf(os.Stderr, "  woeusb-go --check-deps\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
 	flag.PrintDefaults()
