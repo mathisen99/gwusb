@@ -68,84 +68,84 @@ This implementation plan adds a GUI to WoeUSB-go using the Fyne toolkit, along w
     - **Property 3: Dependency Binary Detection**
     - **Validates: Requirements 1.3**
 
-- [ ] 6. Checkpoint - Ensure device and dependency tests pass
+- [x] 6. Checkpoint - Ensure device and dependency tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Implement GUI components
-  - [ ] 7.1 Create internal/gui/app.go
+- [x] 7. Implement GUI components
+  - [x] 7.1 Create internal/gui/app.go
     - Initialize Fyne application
     - Implement root privilege check
     - Implement CheckDependencies method
     - _Requirements: 1.1, 1.2, 1.3_
   
-  - [ ] 7.2 Write property test for root privilege detection
+  - [x] 7.2 Write property test for root privilege detection
     - **Property 2: Root Privilege Detection**
     - **Validates: Requirements 1.2**
   
-  - [ ] 7.3 Create internal/gui/components/file_browser.go
+  - [x] 7.3 Create internal/gui/components/file_browser.go
     - Implement file selection dialog with .iso filter
     - Implement ValidateISO function
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ] 7.4 Write property test for ISO validation
+  - [x] 7.4 Write property test for ISO validation
     - **Property 10: ISO File Validation**
     - **Validates: Requirements 3.3**
   
-  - [ ] 7.5 Create internal/gui/components/progress_bar.go
+  - [x] 7.5 Create internal/gui/components/progress_bar.go
     - Implement SetProgress and SetStatus methods
     - Implement Reset method
     - _Requirements: 5.1, 5.2_
   
-  - [ ] 7.6 Write property test for progress bar updates
+  - [x] 7.6 Write property test for progress bar updates
     - **Property 8: Progress Bar Updates**
     - **Validates: Requirements 5.1**
   
-  - [ ] 7.7 Create internal/gui/components/dependency_dialog.go
+  - [x] 7.7 Create internal/gui/components/dependency_dialog.go
     - Display missing dependencies with package names
     - Show complete install command for distro
     - Handle unknown distro fallback
     - _Requirements: 1.4, 6.2, 6.3, 6.5_
 
-- [ ] 8. Checkpoint - Ensure GUI component tests pass
+- [x] 8. Checkpoint - Ensure GUI component tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Implement main window and state management
-  - [ ] 9.1 Create internal/gui/window.go
+- [x] 9. Implement main window and state management
+  - [x] 9.1 Create internal/gui/window.go
     - Layout device selector, file browser, progress bar, start button
     - Implement UpdateState for button enable/disable logic
     - _Requirements: 4.1, 4.5_
   
-  - [ ] 9.2 Write property test for start button state
+  - [x] 9.2 Write property test for start button state
     - **Property 7: Start Button State**
     - **Validates: Requirements 4.1**
   
-  - [ ] 9.3 Write property test for UI controls during operation
+  - [x] 9.3 Write property test for UI controls during operation
     - **Property 11: UI Controls Disabled During Operation**
     - **Validates: Requirements 4.5**
   
-  - [ ] 9.4 Implement confirmation dialog and write operation
+  - [x] 9.4 Implement confirmation dialog and write operation
     - Show data loss warning before write
     - Connect to existing CLI write logic
     - Update progress bar during operation
     - _Requirements: 4.2, 4.3, 4.4, 4.6, 4.7_
   
-  - [ ] 9.5 Implement window close handler during operation
+  - [x] 9.5 Implement window close handler during operation
     - Warn user about interrupting process
     - _Requirements: 5.4_
 
-- [ ] 10. Wire GUI into main.go
-  - [ ] 10.1 Add --gui flag to cmd/woeusb/main.go
+- [x] 10. Wire GUI into main.go
+  - [x] 10.1 Add --gui flag to cmd/woeusb/main.go
     - Parse --gui flag
     - Launch GUI application when flag is set
     - _Requirements: 1.1_
   
-  - [ ] 10.2 Implement GUI startup flow
+  - [x] 10.2 Implement GUI startup flow
     - Check dependencies on startup
     - Show dependency dialog if missing
     - Show main window if all dependencies satisfied
     - _Requirements: 1.3, 1.4, 6.6_
 
-- [ ] 11. Final checkpoint - Full integration test
+- [x] 11. Final checkpoint - Full integration test
   - Ensure all tests pass, ask the user if questions arise.
   - Manual test: Launch GUI, verify USB detection, verify dependency dialog
 
