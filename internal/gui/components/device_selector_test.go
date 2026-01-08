@@ -80,7 +80,7 @@ func TestProperty1_USBDeviceFiltering(t *testing.T) {
 			// Check that at least one device with this path is a valid USB device
 			foundValid := false
 			for _, dev := range devs {
-				if dev.Type == "disk" && isRemovable(dev.Rm) && dev.Tran == "usb" && !excludedTransports[dev.Tran] {
+				if dev.Type == "disk" && dev.IsRemovable() && dev.Tran == "usb" && !excludedTransports[dev.Tran] {
 					foundValid = true
 					break
 				}
@@ -96,7 +96,7 @@ func TestProperty1_USBDeviceFiltering(t *testing.T) {
 		// Count expected USB devices (unique paths)
 		expectedPaths := make(map[string]bool)
 		for _, dev := range data.Devices {
-			if dev.Type == "disk" && isRemovable(dev.Rm) && dev.Tran == "usb" && !excludedTransports[dev.Tran] {
+			if dev.Type == "disk" && dev.IsRemovable() && dev.Tran == "usb" && !excludedTransports[dev.Tran] {
 				expectedPaths["/dev/"+dev.Name] = true
 			}
 		}

@@ -1,13 +1,27 @@
 package gui
 
 import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/mathisen/woeusb-go/internal/bootloader"
+	filecopy "github.com/mathisen/woeusb-go/internal/copy"
+	"github.com/mathisen/woeusb-go/internal/deps"
 	"github.com/mathisen/woeusb-go/internal/distro"
+	"github.com/mathisen/woeusb-go/internal/filesystem"
 	"github.com/mathisen/woeusb-go/internal/gui/components"
+	"github.com/mathisen/woeusb-go/internal/mount"
+	"github.com/mathisen/woeusb-go/internal/partition"
 )
 
 // OperationState represents the current state of the write operation
@@ -175,15 +189,206 @@ func (w *MainWindow) onStartClicked() {
 func (w *MainWindow) startWriteOperation() {
 	w.SetState(StateInProgress)
 	w.progressBar.Reset()
-	w.statusLabel.SetText("Starting...")
 
-	// TODO: Connect to actual write logic from internal/session
-	// For now, this is a placeholder
 	go func() {
-		// Simulate progress updates
-		w.progressBar.SetProgressAndStatus(0.1, "Preparing device...")
-		// The actual implementation will call the session package
+		var err error
+
+		// Check if we're running as root
+		if !IsRoot() {
+			// Re-launch the CLI with pkexec for the actual write
+			err = w.executeWithPkexec()
+		} else {
+			err = w.executeDeviceMode()
+		}
+
+		// Update UI on completion (schedule on main thread)
+		time.Sleep(100 * time.Millisecond) // Small delay to ensure UI updates
+
+		if err != nil {
+			w.SetState(StateError)
+			w.updateStatus(fmt.Sprintf("Error: %v", err))
+			w.showError(err.Error())
+		} else {
+			w.SetState(StateComplete)
+			w.updateProgress(1.0, "Complete!")
+			w.showSuccess()
+		}
 	}()
+}
+
+// executeWithPkexec runs the CLI tool with elevated privileges via pkexec
+func (w *MainWindow) executeWithPkexec() error {
+	w.updateProgress(0.02, "Requesting administrator privileges...")
+
+	// Get the path to our own executable
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %v", err)
+	}
+
+	// Build the command: pkexec /path/to/woeusb-go --device <iso> <device>
+	cmd := exec.Command("pkexec", executable, "--device", w.selectedISO, w.selectedDevice)
+
+	// Create pipes for stdout/stderr to capture progress
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %v", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start pkexec: %v", err)
+	}
+
+	// Read output in goroutines to update progress
+	go w.readOutput(stdout)
+	go w.readOutput(stderr)
+
+	// Wait for completion
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("write operation failed: %v", err)
+	}
+
+	return nil
+}
+
+// readOutput reads from a pipe and updates progress based on output
+func (w *MainWindow) readOutput(r io.Reader) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Parse progress from CLI output and update GUI
+		w.parseProgressLine(line)
+	}
+}
+
+// parseProgressLine extracts progress info from CLI output
+func (w *MainWindow) parseProgressLine(line string) {
+	// Map CLI output to progress updates
+	switch {
+	case strings.Contains(line, "Mounting source"):
+		w.updateProgress(0.05, "Mounting ISO file...")
+	case strings.Contains(line, "Wiping device"):
+		w.updateProgress(0.10, "Creating partition table...")
+	case strings.Contains(line, "Formatting partition"):
+		w.updateProgress(0.15, "Formatting partition...")
+	case strings.Contains(line, "Mounting target"):
+		w.updateProgress(0.20, "Mounting target partition...")
+	case strings.Contains(line, "Copying"):
+		w.updateProgress(0.50, "Copying Windows files...")
+	case strings.Contains(line, "Installing GRUB"):
+		w.updateProgress(0.90, "Installing bootloader...")
+	case strings.Contains(line, "Cleaning up"):
+		w.updateProgress(0.95, "Cleaning up...")
+	case strings.Contains(line, "completed successfully"):
+		w.updateProgress(1.0, "Complete!")
+	}
+}
+
+// updateProgress safely updates progress from any goroutine
+func (w *MainWindow) updateProgress(value float64, status string) {
+	w.progressBar.SetProgressAndStatus(value, status)
+}
+
+// updateStatus safely updates status label from any goroutine
+func (w *MainWindow) updateStatus(status string) {
+	w.statusLabel.SetText(status)
+}
+
+// showError displays an error dialog
+func (w *MainWindow) showError(message string) {
+	dialog.ShowError(fmt.Errorf("%s", message), w.window)
+}
+
+// showSuccess displays a success dialog
+func (w *MainWindow) showSuccess() {
+	dialog.ShowInformation("Success",
+		"Bootable USB created successfully!\n\nYou may now safely remove the USB device.",
+		w.window)
+}
+
+// executeDeviceMode performs the actual USB creation
+func (w *MainWindow) executeDeviceMode() error {
+	var srcMount, dstMount string
+	var err error
+
+	// Cleanup function
+	defer func() {
+		if dstMount != "" {
+			_ = mount.CleanupMountpoint(dstMount)
+		}
+		if srcMount != "" {
+			_ = mount.CleanupMountpoint(srcMount)
+		}
+	}()
+
+	// Step 1: Mount source ISO
+	w.updateProgress(0.05, "Mounting ISO file...")
+	srcMount, err = mount.MountISO(w.selectedISO)
+	if err != nil {
+		return fmt.Errorf("failed to mount ISO: %v", err)
+	}
+
+	// Step 2: Create partition table
+	w.updateProgress(0.10, "Creating partition table...")
+	if err := partition.CreateBootablePartition(w.selectedDevice, "FAT"); err != nil {
+		return fmt.Errorf("failed to create partition: %v", err)
+	}
+
+	// Step 3: Get partition path and format
+	mainPartition := partition.GetPartitionPath(w.selectedDevice)
+	w.updateProgress(0.15, "Formatting partition as FAT32...")
+	if err := filesystem.FormatPartition(mainPartition, "FAT", "YOURWINDOWS"); err != nil {
+		return fmt.Errorf("failed to format partition: %v", err)
+	}
+
+	// Step 4: Mount target partition
+	w.updateProgress(0.20, "Mounting target partition...")
+	dstMount, err = mount.MountDevice(mainPartition, "vfat")
+	if err != nil {
+		return fmt.Errorf("failed to mount target: %v", err)
+	}
+
+	// Step 5: Copy files with progress callback
+	w.updateProgress(0.25, "Copying Windows files (this may take a while)...")
+
+	progressCallback := func(current, total int64, filename string) {
+		if total > 0 {
+			// Scale progress from 0.25 to 0.90 during copy
+			copyProgress := float64(current) / float64(total)
+			overallProgress := 0.25 + (copyProgress * 0.65)
+			status := fmt.Sprintf("Copying: %s (%.1f%%)", filename, copyProgress*100)
+			w.updateProgress(overallProgress, status)
+		}
+	}
+
+	if err := filecopy.CopyWindowsISOWithWIMSplit(srcMount, dstMount, progressCallback); err != nil {
+		return fmt.Errorf("failed to copy files: %v", err)
+	}
+
+	// Step 6: Install GRUB bootloader
+	w.updateProgress(0.92, "Installing GRUB bootloader...")
+	dependencies, _ := deps.CheckDependencies()
+	if dependencies != nil && dependencies.GrubCmd != "" {
+		if err := bootloader.InstallGRUBWithConfig(dstMount, w.selectedDevice, dependencies.GrubCmd); err != nil {
+			// GRUB failure is non-fatal, UEFI boot will still work
+			w.updateProgress(0.95, "GRUB install failed (UEFI boot will work)")
+		}
+	}
+
+	// Step 7: Cleanup
+	w.updateProgress(0.98, "Cleaning up...")
+	_ = mount.CleanupMountpoint(dstMount) // Non-fatal, ignore error
+	dstMount = ""
+
+	_ = mount.CleanupMountpoint(srcMount) // Non-fatal, ignore error
+	srcMount = ""
+
+	return nil
 }
 
 // onCloseRequested handles window close requests
