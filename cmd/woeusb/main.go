@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -183,78 +182,81 @@ func runGUI() {
 func runDependencyCheck() {
 	output.Step("Checking system dependencies...")
 
-	allFound := true
+	result := deps.CheckDependenciesWithDistro()
 
-	// Required tools
-	requiredTools := []struct {
-		name string
-		pkg  string
-		cmds []string
-	}{
-		{"wipefs", "util-linux", []string{"wipefs"}},
-		{"parted", "parted", []string{"parted"}},
-		{"lsblk", "util-linux", []string{"lsblk"}},
-		{"blockdev", "util-linux", []string{"blockdev"}},
-		{"mount", "util-linux", []string{"mount"}},
-		{"umount", "util-linux", []string{"umount"}},
-		{"7z", "p7zip-full / p7zip", []string{"7z"}},
-		{"mkdosfs", "dosfstools", []string{"mkdosfs", "mkfs.vfat", "mkfs.fat"}},
-		{"wimlib-imagex", "wimlib / wimtools", []string{"wimlib-imagex"}},
+	// Show distro info if detected
+	if result.DistroInfo != nil {
+		output.Verbose("Detected distro: %s (based on: %s)", result.DistroInfo.Name, result.DistroInfo.IDLike)
 	}
 
-	for _, tool := range requiredTools {
-		found := false
-		var foundPath string
-		for _, cmd := range tool.cmds {
-			if path, err := exec.LookPath(cmd); err == nil {
-				found = true
-				foundPath = path
-				break
+	// Report found dependencies
+	if result.Deps.Wipefs != "" {
+		output.Info("wipefs: found at %s", result.Deps.Wipefs)
+	}
+	if result.Deps.Parted != "" {
+		output.Info("parted: found at %s", result.Deps.Parted)
+	}
+	if result.Deps.Lsblk != "" {
+		output.Info("lsblk: found at %s", result.Deps.Lsblk)
+	}
+	if result.Deps.Blockdev != "" {
+		output.Info("blockdev: found at %s", result.Deps.Blockdev)
+	}
+	if result.Deps.Mount != "" {
+		output.Info("mount: found at %s", result.Deps.Mount)
+	}
+	if result.Deps.Umount != "" {
+		output.Info("umount: found at %s", result.Deps.Umount)
+	}
+	if result.Deps.SevenZip != "" {
+		output.Info("7z: found at %s", result.Deps.SevenZip)
+	}
+	if result.Deps.MkFat != "" {
+		output.Info("mkdosfs: found at %s", result.Deps.MkFat)
+	}
+	if result.Deps.WimlibSplit != "" {
+		output.Info("wimlib-imagex: found at %s", result.Deps.WimlibSplit)
+	}
+	if result.Deps.MkNTFS != "" {
+		output.Info("mkntfs: found at %s", result.Deps.MkNTFS)
+	}
+	if result.Deps.GrubCmd != "" {
+		output.Info("grub-install: found at %s", result.Deps.GrubCmd)
+	}
+
+	// Report missing dependencies
+	requiredMissing := deps.GetRequiredMissing(result.Missing)
+	optionalMissing := deps.GetOptionalMissing(result.Missing)
+
+	for _, m := range requiredMissing {
+		output.Error("%s: NOT FOUND (install package: %s)", m.Binary, m.PackageName)
+	}
+
+	if len(optionalMissing) > 0 {
+		output.Step("Checking optional dependencies...")
+		for _, m := range optionalMissing {
+			purpose := "additional features"
+			if m.Binary == "grub-install" {
+				purpose = "legacy BIOS boot"
+			} else if m.Binary == "mkntfs" {
+				purpose = "NTFS filesystem support"
 			}
-		}
-		if found {
-			output.Info("%s: found at %s", tool.name, foundPath)
-		} else {
-			output.Error("%s: NOT FOUND (install package: %s)", tool.name, tool.pkg)
-			allFound = false
-		}
-	}
-
-	// Optional tools
-	optionalTools := []struct {
-		name    string
-		pkg     string
-		cmds    []string
-		purpose string
-	}{
-		{"grub-install", "grub2 / grub-pc", []string{"grub-install", "grub2-install"}, "legacy BIOS boot"},
-		{"mkntfs", "ntfs-3g / ntfsprogs", []string{"mkntfs"}, "NTFS filesystem support"},
-	}
-
-	output.Step("Checking optional dependencies...")
-	for _, tool := range optionalTools {
-		found := false
-		var foundPath string
-		for _, cmd := range tool.cmds {
-			if path, err := exec.LookPath(cmd); err == nil {
-				found = true
-				foundPath = path
-				break
-			}
-		}
-		if found {
-			output.Info("%s: found at %s", tool.name, foundPath)
-		} else {
-			output.Warning("%s: not found (needed for %s, install: %s)", tool.name, tool.purpose, tool.pkg)
+			output.Warning("%s: not found (needed for %s, install: %s)", m.Binary, purpose, m.PackageName)
 		}
 	}
 
 	fmt.Println()
-	if allFound {
+	if len(requiredMissing) == 0 {
 		output.Success("All required dependencies are installed!")
+		if installCmd := deps.GetInstallCommand(optionalMissing, result.DistroInfo); installCmd != "" {
+			output.Info("To install optional dependencies: %s", installCmd)
+		}
 		os.Exit(0)
 	} else {
 		output.Error("Some required dependencies are missing. Please install them before using woeusb-go.")
+		if installCmd := deps.GetInstallCommand(requiredMissing, result.DistroInfo); installCmd != "" {
+			output.Info("Install with: %s", installCmd)
+		}
 		os.Exit(1)
 	}
 }
