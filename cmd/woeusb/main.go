@@ -235,11 +235,14 @@ func runDependencyCheck() {
 	if len(optionalMissing) > 0 {
 		output.Step("Checking optional dependencies...")
 		for _, m := range optionalMissing {
-			purpose := "additional features"
-			if m.Binary == "grub-install" {
+			var purpose string
+			switch m.Binary {
+			case "grub-install":
 				purpose = "legacy BIOS boot"
-			} else if m.Binary == "mkntfs" {
+			case "mkntfs":
 				purpose = "NTFS filesystem support"
+			default:
+				purpose = "additional features"
 			}
 			output.Warning("%s: not found (needed for %s, install: %s)", m.Binary, purpose, m.PackageName)
 		}
