@@ -20,7 +20,7 @@ import (
 	"github.com/mathisen/woeusb-go/internal/validation"
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 type config struct {
 	device       bool
