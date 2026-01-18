@@ -1,2 +1,21 @@
-Project_we_are_replicating/
-iso_for_test/
+# Binaries
+woeusb-go
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Development
+.kiro
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
